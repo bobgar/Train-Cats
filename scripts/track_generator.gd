@@ -292,6 +292,35 @@ func get_junction_arc(center: Vector2i, from_nb: Vector2i, to_nb: Vector2i) -> A
 	rev.reverse()
 	return rev
 
+## Returns all sampled world-space points on every track curve and junction arc.
+## Called by EnvironmentSpawner after build_curves_and_render() to find clear space.
+func get_all_sample_points() -> Array:
+	var pts: Array = []
+	for key in _edge_curves.keys():
+		for pt_var in (_edge_curves[key] as Array):
+			pts.append(pt_var)
+	for key in _junction_arcs.keys():
+		for pt_var in (_junction_arcs[key] as Array):
+			pts.append(pt_var)
+	return pts
+
+## Returns edge-curve points only (no junction arcs) for building/tree clearance.
+## Junction arc midpoints intrude into cell interiors and would block all placement.
+func get_edge_sample_points() -> Array:
+	var pts: Array = []
+	for key in _edge_curves.keys():
+		for pt_var in (_edge_curves[key] as Array):
+			pts.append(pt_var)
+	return pts
+
+## Returns the raw [[a, b], ...] edge list for tunnel selection.
+func get_edges() -> Array:
+	return _edges
+
+## Returns true if gpos is a station node (skips pullback / junction arcs).
+func is_station(gpos: Vector2i) -> bool:
+	return _station_set.has(gpos)
+
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------

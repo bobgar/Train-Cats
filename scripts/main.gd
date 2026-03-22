@@ -11,19 +11,27 @@ const TRAIN_COLORS: Array = [
 	Color(0.90, 0.30, 0.65),  # Pink
 ]
 
-const TrackGeneratorScript = preload("res://scripts/track_generator.gd")
-const StationScript = preload("res://scripts/station.gd")
-const TrainScript = preload("res://scripts/train.gd")
-const PlayerScript = preload("res://scripts/player.gd")
+const TrackGeneratorScript   = preload("res://scripts/track_generator.gd")
+const StationScript          = preload("res://scripts/station.gd")
+const TrainScript            = preload("res://scripts/train.gd")
+const PlayerScript           = preload("res://scripts/player.gd")
+const EnvironmentSpawnerScript = preload("res://scripts/environment_spawner.gd")
 
 func _ready() -> void:
 	_setup_environment()
 	_add_ground()
 	var gen = _add_tracks()
 	var station_gpos: Array = _spawn_stations(gen)
-	gen.call("build_curves_and_render", station_gpos)  # deferred so station nodes skip pullback
+	gen.call("build_curves_and_render", station_gpos)
+	_spawn_world_objects(gen)
 	_spawn_trains(gen, station_gpos)
 	_spawn_player()
+
+func _spawn_world_objects(gen) -> void:
+	var env := EnvironmentSpawnerScript.new()
+	env.name = "EnvironmentSpawner"
+	add_child(env)
+	env.call("setup", gen)
 
 func _setup_environment() -> void:
 	var env := WorldEnvironment.new()
