@@ -10,6 +10,8 @@ class_name Train
 
 enum State { MOVING, STOPPED, REVERSING, WAITING_AT_JUNCTION, DERAILED }
 
+signal derailed(world_pos: Vector3)   ## emitted once when train first derails
+
 @export var max_speed: float = 8.0
 @export var acceleration: float = 5.0
 @export var deceleration: float = 7.0
@@ -177,6 +179,7 @@ func _swipe_derail(swipe_dir: Vector3, force: float) -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
+	derailed.emit(global_position)
 	var base_vel := swipe_dir * force * 0.5 + _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5
@@ -201,6 +204,7 @@ func _derail() -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
+	derailed.emit(global_position)
 	var vel := _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5
@@ -223,6 +227,8 @@ func _spawn_physics_car(car: Node3D, launch_vel: Vector3) -> void:
 	var rb := RigidBody3D.new()
 	rb.global_transform = car.global_transform
 	rb.mass = 1.5
+	rb.collision_layer = 9   # layer 1 (world) + layer 8 (customer hit detection)
+	rb.collision_mask  = 1   # collide with world floor/table
 	# Copy every MeshInstance3D from the original car so it keeps its look.
 	# Build a list of the new materials so we can fade them all together.
 	var fade_mats: Array = []
@@ -479,10 +485,15 @@ func _arrive() -> void:
 
 func _respawn() -> void:
 	var new_train = get_script().new()
-	new_train.max_speed   = max_speed
+	new_train.max_speed    = max_speed
 	new_train.acceleration = acceleration
 	new_train.deceleration = deceleration
-	get_parent().add_child(new_train)
+	var parent := get_parent()
+	parent.add_child(new_train)
 	new_train.call("setup", _gen, _station_nodes,
 		_station_nodes[randi() % _station_nodes.size()], _color, _num_cars)
+	# Re-register with CustomerManager so the new train's derailed signal is tracked
+	var mgr := parent.get_node_or_null("CustomerManager")
+	if mgr != null:
+		mgr.call("register_train", new_train)
 	queue_free()

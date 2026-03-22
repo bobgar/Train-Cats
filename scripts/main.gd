@@ -16,6 +16,7 @@ const StationScript            = preload("res://scripts/station.gd")
 const TrainScript              = preload("res://scripts/train.gd")
 const PlayerScript             = preload("res://scripts/player.gd")
 const EnvironmentSpawnerScript = preload("res://scripts/environment_spawner.gd")
+const CustomerManagerScript    = preload("res://scripts/customer_manager.gd")
 
 # Track grid is set to 8×8 at 7.0 units → nodes span approx ±28 in X and Z.
 # TABLE is sized to contain the track + station platforms.
@@ -42,8 +43,9 @@ func _ready() -> void:
 	var station_gpos: Array = _spawn_stations(gen)
 	gen.call("build_curves_and_render", station_gpos)
 	_spawn_world_objects(gen)
-	_spawn_trains(gen, station_gpos)
-	_spawn_player()
+	var player = _spawn_player()
+	var manager = _spawn_customer_manager(player)
+	_spawn_trains(gen, station_gpos, manager)
 
 func _spawn_world_objects(gen) -> void:
 	var env := EnvironmentSpawnerScript.new()
@@ -375,13 +377,21 @@ func _spawn_stations(gen) -> Array:
 		station_gpos.append(gpos)
 	return station_gpos
 
-func _spawn_player() -> void:
+func _spawn_player() -> Node:
 	var player = PlayerScript.new()
 	player.name = "Player"
 	player.position = Vector3(0, 2, 0)
 	add_child(player)
+	return player
 
-func _spawn_trains(gen, stations: Array) -> void:
+func _spawn_customer_manager(player: Node) -> Node:
+	var mgr = CustomerManagerScript.new()
+	mgr.name = "CustomerManager"
+	add_child(mgr)
+	mgr.call("setup", player, TABLE_HW, TABLE_HD)
+	return mgr
+
+func _spawn_trains(gen, stations: Array, manager: Node) -> void:
 	if stations.size() < 2:
 		return
 	var num_trains: int = mini(7, stations.size())
@@ -397,3 +407,4 @@ func _spawn_trains(gen, stations: Array) -> void:
 		train.deceleration = lerp(14.0, 4.5, size_t)
 		add_child(train)
 		train.call("setup", gen, stations, start, color, num_cars)
+		manager.call("register_train", train)
