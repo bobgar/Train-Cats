@@ -27,11 +27,15 @@ var _swipe_side: int = 0       # alternates 0/1 for left/right paw
 var _leg_phase: float = 0.0
 var _body_area: Area3D         # overlaps train sensors for hit detection
 
+var _spawn_pos: Vector3        # set on _ready; used to respawn after falling
+var _respawning: bool = false  # true while waiting for respawn timer
+
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
 
 func _ready() -> void:
+	_spawn_pos = position
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_build_collision()
 	_build_body_area()
@@ -158,6 +162,14 @@ func _input(event: InputEvent) -> void:
 # ---------------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	# Respawn after falling off the table
+	if global_position.y < -8.0 and not _respawning:
+		_respawning = true
+		velocity = Vector3.ZERO
+		await get_tree().create_timer(2.0).timeout
+		global_position = _spawn_pos
+		_respawning = false
+
 	# Gravity
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta

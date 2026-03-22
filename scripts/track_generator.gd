@@ -90,10 +90,16 @@ func _add_extra_edges() -> void:
 	for x in range(grid_width):
 		for z in range(grid_height):
 			var from := Vector2i(x, z)
+			var from_border := (x == 0 or x == grid_width - 1 or z == 0 or z == grid_height - 1)
 			for offset in [Vector2i(1, 0), Vector2i(0, 1)]:
 				var to: Vector2i = from + offset
-				if nodes.has(to) and rng.randf() < extra_edge_chance:
-					_add_edge(from, to)
+				if not nodes.has(to):
+					continue
+				var to_border := (to.x == 0 or to.x == grid_width - 1 or to.y == 0 or to.y == grid_height - 1)
+				if from_border and to_border:
+					_add_edge(from, to)   # always: guarantees full perimeter loop
+				elif rng.randf() < extra_edge_chance * 0.35:
+					_add_edge(from, to)   # sparse interior — trains bias to the perimeter
 
 func _add_edge(a: Vector2i, b: Vector2i) -> void:
 	var key: String

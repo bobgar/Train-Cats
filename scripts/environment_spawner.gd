@@ -80,8 +80,8 @@ func _place_buildings() -> void:
 	for _i in range(_BLDG_TRIES):
 		if placed >= _BLDG_COUNT:
 			break
-		var cx := _rng.randf_range(-44.0, 36.0)
-		var cz := _rng.randf_range(-44.0, 36.0)
+		var cx := _rng.randf_range(-26.0, 20.0)
+		var cz := _rng.randf_range(-26.0, 20.0)
 		var style := _rng.randi() % 3
 		var w: float; var h: float; var l: float
 		match style:
@@ -205,8 +205,8 @@ func _bldg_office(root: Node3D, w: float, h: float, l: float) -> void:
 
 func _place_trees() -> void:
 	for _ci in range(_TREE_CLUMPS):
-		var cx := _rng.randf_range(-44.0, 36.0)
-		var cz := _rng.randf_range(-44.0, 36.0)
+		var cx := _rng.randf_range(-26.0, 20.0)
+		var cz := _rng.randf_range(-26.0, 20.0)
 		# 18% chance of a lone tree, otherwise a clump of 3–7
 		var count := 1 if _rng.randf() < 0.18 else _rng.randi_range(3, 7)
 		for _ti in range(count):
@@ -252,7 +252,7 @@ func _tree_round(node: Node3D, s: float) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.11, _rng.randf_range(0.34, 0.50), 0.13)
 	mi.material_override = mat
-	mi.position = Vector3(0, (0.90 + 0.84) * s, 0)
+	mi.position = Vector3(0, (0.90 + 0.70) * s, 0)   # place sphere bottom at trunk top
 	node.add_child(mi)
 
 # ---------------------------------------------------------------------------
