@@ -10,7 +10,9 @@ class_name Train
 
 enum State { MOVING, STOPPED, REVERSING, WAITING_AT_JUNCTION, DERAILED }
 
-signal derailed(world_pos: Vector3)   ## emitted once when train first derails
+## Emitted once when train first enters DERAILED state.
+## by_player is true only when caused directly by the cat (swipe or run-into).
+signal derailed(world_pos: Vector3, by_player: bool)
 
 @export var max_speed: float = 8.0
 @export var acceleration: float = 5.0
@@ -179,7 +181,7 @@ func _swipe_derail(swipe_dir: Vector3, force: float) -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
-	derailed.emit(global_position)
+	derailed.emit(global_position, true)   # player-caused
 	var base_vel := swipe_dir * force * 0.5 + _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5
@@ -204,7 +206,7 @@ func _derail() -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
-	derailed.emit(global_position)
+	derailed.emit(global_position, false)   # train-vs-train collision
 	var vel := _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5

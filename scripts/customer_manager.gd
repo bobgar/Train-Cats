@@ -39,7 +39,7 @@ func setup(player: Node3D, table_hw: float, table_hd: float) -> void:
 		_spawn_timers.append(float(i) * 0.8)
 
 func register_train(train: Node) -> void:
-	train.derailed.connect(_on_train_derailed)
+	train.derailed.connect(_on_train_derailed)   # signature: (world_pos, by_player)
 
 # ---------------------------------------------------------------------------
 # Per-frame management
@@ -141,7 +141,10 @@ func _track_hit_score(customer: Node) -> void:
 # Event handlers
 # ---------------------------------------------------------------------------
 
-func _on_train_derailed(world_pos: Vector3) -> void:
+func _on_train_derailed(world_pos: Vector3, by_player: bool) -> void:
+	# Customers only react when the CAT caused the crash, not train-vs-train
+	if not by_player:
+		return
 	for c in _customers:
 		if not is_instance_valid(c):
 			continue

@@ -284,11 +284,25 @@ func _spawn_stars() -> void:
 	stars.initial_velocity_max = 11.0
 	stars.scale_amount_min     = 0.8
 	stars.scale_amount_max     = 1.6
-	var star_mesh              := BoxMesh.new()
-	star_mesh.size             = Vector3(1.0, 1.0, 1.0)
-	stars.mesh                 = star_mesh
-	stars.color                = Color(1.0, 0.88, 0.10)   # gold
-	stars.position             = Vector3(0.0, 9.0, 0.0)   # above 2× head
+	stars.angle_min            = 0.0
+	stars.angle_max            = 360.0     # random initial rotation per particle
+	stars.angular_velocity_min = -240.0
+	stars.angular_velocity_max =  240.0   # spin as they fly
+
+	# QuadMesh (flat square) with billboard mode so it always faces the camera.
+	# Gold emissive material makes them glow — no vertex_color needed.
+	var star_mesh  := QuadMesh.new()
+	star_mesh.size = Vector2(1.2, 1.2)
+	var star_mat   := StandardMaterial3D.new()
+	star_mat.albedo_color     = Color(1.0, 0.90, 0.10)   # bright gold
+	star_mat.emission_enabled = true
+	star_mat.emission         = Color(1.0, 0.75, 0.0) * 2.5   # warm glow
+	star_mat.billboard_mode   = BaseMaterial3D.BILLBOARD_ENABLED
+	star_mat.cull_mode        = BaseMaterial3D.CULL_DISABLED   # visible from both sides
+	star_mesh.material        = star_mat
+
+	stars.mesh     = star_mesh
+	stars.position = Vector3(0.0, 9.0, 0.0)   # above 2× head
 	_head_pivot.add_child(stars)
 
 # ---------------------------------------------------------------------------
