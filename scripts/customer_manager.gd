@@ -13,7 +13,9 @@ const PTS_CONE_DERAIL := 10   # points when watched train is knocked over
 const PTS_HIT_DEBRIS  := 25   # points when hit by flying train debris
 
 # Customer y-position when hidden (must match CafeCustomer.HIDE_Y)
-const _HIDE_Y := -6.0
+const _HIDE_Y := -8.0
+
+signal score_changed(new_score: int)
 
 var _player: Node3D = null
 var _table_hw: float = 34.0
@@ -21,8 +23,11 @@ var _table_hd: float = 34.0
 var _customers: Array = []       # active CafeCustomer nodes
 var _spawn_timers: Array = []    # remaining wait times before next spawn
 var _score: int = 0
-var _score_label: Label = null
 var _rng := RandomNumberGenerator.new()
+
+# Round stats (reset each round)
+var impressed_count: int = 0
+var hit_count: int = 0
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -33,13 +38,21 @@ func setup(player: Node3D, table_hw: float, table_hd: float) -> void:
 	_player   = player
 	_table_hw = table_hw
 	_table_hd = table_hd
-	_build_score_ui()
 	# Stagger initial spawns slightly so they don't all pop up at once
 	for i in range(MAX_ACTIVE):
 		_spawn_timers.append(float(i) * 0.8)
 
 func register_train(train: Node) -> void:
 	train.derailed.connect(_on_train_derailed)   # signature: (world_pos, by_player)
+
+func reset_round() -> void:
+	_score = 0
+	impressed_count = 0
+	hit_count = 0
+	score_changed.emit(0)
+
+func get_stats() -> Dictionary:
+	return {"score": _score, "impressed": impressed_count, "hit": hit_count}
 
 # ---------------------------------------------------------------------------
 # Per-frame management
@@ -124,18 +137,11 @@ func _spawn_one() -> void:
 		return
 	# All 20 attempts overlapped — silently skip; next respawn timer will retry
 
-## Connect a one-shot check so we award PTS_HIT_DEBRIS the first time
-## the customer is hit (before "done" fires).
+## Connect to the customer's hit_scored signal so we award PTS_HIT_DEBRIS exactly once.
 func _track_hit_score(customer: Node) -> void:
-	# We poll via the customer's Area3D body_entered — but that already calls
-	# trigger_hit internally.  Simplest hook: connect a thin lambda to the
-	# Area3D's body_entered signal on the customer's hit area.
-	for child in customer.get_children():
-		if child is Area3D:
-			child.body_entered.connect(func(_b: Node3D) -> void:
-				_add_score(PTS_HIT_DEBRIS)
-				_update_ui())
-			break
+	customer.connect("hit_scored", func() -> void:
+		hit_count += 1
+		_add_score(PTS_HIT_DEBRIS))
 
 # ---------------------------------------------------------------------------
 # Event handlers
@@ -150,8 +156,8 @@ func _on_train_derailed(world_pos: Vector3, by_player: bool) -> void:
 			continue
 		if c.call("is_in_view_cone", world_pos):
 			c.call("trigger_happy")
+			impressed_count += 1
 			_add_score(PTS_CONE_DERAIL)
-	_update_ui()
 
 func _on_customer_done(customer: Node) -> void:
 	_customers.erase(customer)
@@ -163,31 +169,4 @@ func _on_customer_done(customer: Node) -> void:
 
 func _add_score(pts: int) -> void:
 	_score += pts
-	_update_ui()
-
-func _update_ui() -> void:
-	if _score_label != null:
-		_score_label.text = "Score: %d" % _score
-
-# ---------------------------------------------------------------------------
-# Score UI
-# ---------------------------------------------------------------------------
-
-func _build_score_ui() -> void:
-	var canvas     := CanvasLayer.new()
-	canvas.layer   = 10
-	var label      := Label.new()
-	label.text     = "Score: 0"
-	label.position = Vector2(16.0, 16.0)
-
-	# Style — slightly transparent dark background, large white text
-	var settings := LabelSettings.new()
-	settings.font_size    = 28
-	settings.font_color   = Color(1.0, 1.0, 1.0)
-	settings.outline_size = 3
-	settings.outline_color = Color(0.0, 0.0, 0.0, 0.8)
-	label.label_settings  = settings
-
-	canvas.add_child(label)
-	add_child(canvas)
-	_score_label = label
+	score_changed.emit(_score)

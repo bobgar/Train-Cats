@@ -17,6 +17,9 @@ const TrainScript              = preload("res://scripts/train.gd")
 const PlayerScript             = preload("res://scripts/player.gd")
 const EnvironmentSpawnerScript = preload("res://scripts/environment_spawner.gd")
 const CustomerManagerScript    = preload("res://scripts/customer_manager.gd")
+const HUDScript                = preload("res://scripts/hud.gd")
+const TitleScreenScript        = preload("res://scripts/title_screen.gd")
+const RoundScoreboardScript    = preload("res://scripts/round_scoreboard.gd")
 
 # Track grid is set to 8×8 at 7.0 units → nodes span approx ±28 in X and Z.
 # TABLE is sized to contain the track + station platforms.
@@ -34,7 +37,31 @@ const WALL_TOP     :=  28.0  # top of all walls
 const WALL_H   := WALL_TOP - ROOM_FLOOR   # 50
 const WALL_CY  := ROOM_FLOOR + WALL_H * 0.5   # 3  (wall centre Y)
 
+# ---------------------------------------------------------------------------
+# Round progression: points needed to pass each round (index 0 = round 1)
+# ---------------------------------------------------------------------------
+const ROUND_REQUIREMENTS: Array = [40, 80, 130, 200, 280, 400]
+
+# ---------------------------------------------------------------------------
+# Game state
+# ---------------------------------------------------------------------------
+enum GameState { TITLE, PLAYING, ROUND_END, GAME_OVER }
+
+var _game_state: GameState = GameState.TITLE
+var _current_round: int    = 1
+
+# Node references built in _ready
+var _player_node: Node      = null
+var _customer_manager: Node = null
+var _hud: Node              = null
+var _title_screen: Node     = null
+var _round_scoreboard: Node = null
+var _gameplay_cam: Camera3D = null   # normal play camera (child of player)
+var _cinematic_cam: Camera3D = null  # zoom-in cam during round end
+
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
 	_setup_environment()
 	_add_ground()
 	_add_table_structure()
@@ -43,15 +70,140 @@ func _ready() -> void:
 	var station_gpos: Array = _spawn_stations(gen)
 	gen.call("build_curves_and_render", station_gpos)
 	_spawn_world_objects(gen)
-	var player = _spawn_player()
-	var manager = _spawn_customer_manager(player)
-	_spawn_trains(gen, station_gpos, manager)
+
+	_player_node      = _spawn_player()
+	_customer_manager = _spawn_customer_manager(_player_node)
+	_spawn_trains(gen, station_gpos, _customer_manager)
+	_spawn_cinematic_cam()
+
+	_hud             = HUDScript.new()
+	_hud.name        = "HUD"
+	add_child(_hud)
+	_customer_manager.score_changed.connect(_hud.update_score)
+
+	_title_screen      = TitleScreenScript.new()
+	_title_screen.name = "TitleScreen"
+	add_child(_title_screen)
+	_title_screen.continue_pressed.connect(_on_title_continue)
+
+	_round_scoreboard      = RoundScoreboardScript.new()
+	_round_scoreboard.name = "RoundScoreboard"
+	add_child(_round_scoreboard)
+	_round_scoreboard.continue_pressed.connect(_on_scoreboard_continue)
+
+	_connect_hud_signals()
+
+	# Start paused at title screen
+	get_tree().paused = true
+	_title_screen.configure(false)
 
 func _spawn_world_objects(gen) -> void:
 	var env := EnvironmentSpawnerScript.new()
 	env.name = "EnvironmentSpawner"
 	add_child(env)
 	env.call("setup", gen)
+
+# ---------------------------------------------------------------------------
+# Game state transitions
+# ---------------------------------------------------------------------------
+
+func _on_title_continue() -> void:
+	_start_round()
+
+func _start_round() -> void:
+	_game_state = GameState.PLAYING
+	_customer_manager.call("reset_round")
+	var req := _round_requirement(_current_round)
+	_hud.start_round(_current_round, req)
+	get_tree().paused = false
+	# Make sure gameplay camera is active
+	if _gameplay_cam != null:
+		_gameplay_cam.current = true
+	if _cinematic_cam != null:
+		_cinematic_cam.current = false
+
+func _on_hud_time_up() -> void:
+	if _game_state != GameState.PLAYING:
+		return
+	_end_round()
+
+func _end_round() -> void:
+	_game_state = GameState.ROUND_END
+	_hud.stop()
+	get_tree().paused = true
+
+	var stats: Dictionary = _customer_manager.call("get_stats")
+	var score: int   = stats.get("score", 0)
+	var req: int     = _round_requirement(_current_round)
+	var passed: bool = score >= req
+
+	# Cinematic zoom — tween camera toward cat's face then show scoreboard
+	_do_cinematic_zoom(func() -> void:
+		_round_scoreboard.show_result(
+			score, req,
+			stats.get("impressed", 0), stats.get("hit", 0),
+			passed, _current_round))
+
+func _on_scoreboard_continue() -> void:
+	var stats: Dictionary = _customer_manager.call("get_stats")
+	var score: int   = stats.get("score", 0)
+	var req: int     = _round_requirement(_current_round)
+	var passed: bool = score >= req
+
+	# Restore gameplay camera
+	if _gameplay_cam != null:
+		_gameplay_cam.current = true
+	if _cinematic_cam != null:
+		_cinematic_cam.current = false
+
+	if passed:
+		_current_round += 1
+		_start_round()
+	else:
+		# Game over — show title with game-over header
+		_game_state    = GameState.GAME_OVER
+		_current_round = 1
+		_title_screen.configure(true)
+
+func _round_requirement(round_num: int) -> int:
+	var idx := clampi(round_num - 1, 0, ROUND_REQUIREMENTS.size() - 1)
+	return ROUND_REQUIREMENTS[idx]
+
+# ---------------------------------------------------------------------------
+# Cinematic camera zoom
+# ---------------------------------------------------------------------------
+
+func _spawn_cinematic_cam() -> void:
+	_cinematic_cam          = Camera3D.new()
+	_cinematic_cam.name     = "CinematicCam"
+	_cinematic_cam.current  = false
+	add_child(_cinematic_cam)
+
+func _do_cinematic_zoom(on_done: Callable) -> void:
+	if _player_node == null or not is_instance_valid(_player_node):
+		on_done.call()
+		return
+
+	# Target: slightly in front of and above the cat's head
+	var cat_pos: Vector3 = _player_node.global_position
+	var zoom_target := cat_pos + Vector3(0.0, 3.0, -6.0)
+	var zoom_look   := cat_pos + Vector3(0.0, 1.5,  0.0)
+
+	_cinematic_cam.global_position = _cinematic_cam.global_position if _cinematic_cam.get_parent() != null else zoom_target + Vector3(0, 10, 10)
+	_cinematic_cam.current = true
+	if _gameplay_cam != null:
+		_gameplay_cam.current = false
+
+	var tw := create_tween()
+	tw.tween_method(
+		func(t: float) -> void:
+			var start := cat_pos + Vector3(0.0, 14.0, 18.0)
+			var pos   := start.lerp(zoom_target, t)
+			_cinematic_cam.global_position = pos
+			_cinematic_cam.look_at(zoom_look, Vector3.UP),
+		0.0, 1.0, 1.2
+	).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tw.tween_callback(on_done)
 
 # ---------------------------------------------------------------------------
 # Lighting / sky
@@ -382,13 +534,25 @@ func _spawn_player() -> Node:
 	player.name = "Player"
 	player.position = Vector3(0, 2, 0)
 	add_child(player)
+	# Player's _ready runs synchronously during add_child; camera exists now
+	_gameplay_cam = _find_camera(player)
 	return player
+
+func _find_camera(node: Node) -> Camera3D:
+	if node is Camera3D:
+		return node as Camera3D
+	for child in node.get_children():
+		var result := _find_camera(child)
+		if result != null:
+			return result
+	return null
 
 func _spawn_customer_manager(player: Node) -> Node:
 	var mgr = CustomerManagerScript.new()
 	mgr.name = "CustomerManager"
 	add_child(mgr)
 	mgr.call("setup", player, TABLE_HW, TABLE_HD)
+	# Connect timer's time_up after HUD is created (done in _ready after this call)
 	return mgr
 
 func _spawn_trains(gen, stations: Array, manager: Node) -> void:
@@ -408,3 +572,7 @@ func _spawn_trains(gen, stations: Array, manager: Node) -> void:
 		add_child(train)
 		train.call("setup", gen, stations, start, color, num_cars)
 		manager.call("register_train", train)
+
+# Connect HUD time_up after HUD exists — called at end of _ready
+func _connect_hud_signals() -> void:
+	_hud.time_up.connect(_on_hud_time_up)

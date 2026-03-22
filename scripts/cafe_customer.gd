@@ -5,7 +5,8 @@ class_name CafeCustomer
 ## Rises up, tracks the player with their head, reacts to derailments, and
 ## can be knocked back by flying train debris.
 
-signal done   ## emitted when fully hidden — manager frees the node
+signal done        ## emitted when fully hidden — manager frees the node
+signal hit_scored  ## emitted once the first time this customer is hit by debris
 
 enum State { RISING, WATCHING, SINKING }
 
@@ -14,7 +15,8 @@ const SHOW_Y     :=  0.0   # fully risen — head clears table edge
 const RISE_SPEED := 4.5    # units/sec — ~1.8s over 8-unit travel
 const SINK_SPEED := 3.5
 const WATCH_TIME := 20.0
-const CONE_COS   := 0.5    # cos(60°) — half-angle of view cone
+const CONE_COS      := 0.5    # cos(60°) — half-angle of view cone
+const VIEW_DISTANCE := 70.0   # max XZ distance to detect a derail
 
 var _state: State = State.RISING
 var _watch_timer: float = 0.0
@@ -202,11 +204,29 @@ func is_in_view_cone(world_pos: Vector3) -> bool:
 	if to_xz.length_squared() < 0.01:
 		return true
 
+	# Distance limit: too far away to notice
+	if to_xz.length() > VIEW_DISTANCE:
+		return false
+
 	# _face_dir is normalised in setup(); grab its XZ components as 2D
 	var face_2d := Vector2(_face_dir.x, _face_dir.z)
 
 	# dot > CONE_COS means angle from face direction < 60°
-	return to_xz.normalized().dot(face_2d) > CONE_COS
+	if to_xz.normalized().dot(face_2d) <= CONE_COS:
+		return false
+
+	# Line-of-sight: ray from head to event, blocked by layer 1 (walls/table)
+	return _los_clear(_head_pivot.global_position, world_pos)
+
+func _los_clear(from: Vector3, to: Vector3) -> bool:
+	if not is_inside_tree():
+		return true
+	var space_state := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 1
+	if _player_ref != null and is_instance_valid(_player_ref):
+		query.exclude = [_player_ref.get_rid()]
+	return space_state.intersect_ray(query).is_empty()
 
 func trigger_happy() -> void:
 	# Only react when fully up and watching — not while still rising or leaving
@@ -230,6 +250,7 @@ func trigger_hit() -> void:
 	if _hit:
 		return
 	_hit = true
+	hit_scored.emit()
 	_set_x_eyes()
 	_spawn_stars()
 	# Head snaps back hard, then slumps forward — more violent than trigger_happy
