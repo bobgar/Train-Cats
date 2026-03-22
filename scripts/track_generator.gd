@@ -21,6 +21,7 @@ var _edges: Array = []
 var _edge_set: Dictionary = {}
 var _edge_curves: Dictionary = {}   # canonical key -> Array[Vector3] sampled curve points
 var _junction_arcs: Dictionary = {} # center|nb_a|nb_b key -> Array[Vector3] arc points
+var _station_set: Dictionary = {}   # Vector2i gpos -> true; these nodes skip pullback
 const _CORNER_RADIUS: float = 2.6
 var _rail_mat: StandardMaterial3D
 var _tie_mat: StandardMaterial3D
@@ -31,7 +32,14 @@ func _ready() -> void:
 	_build_spanning_tree()
 	_add_extra_edges()
 	_apply_node_jitter()   # must be after adjacency is final, before curve math
-	_build_all_curves()    # must be after jitter, before render
+	# Curves and rendering are deferred — call build_curves_and_render() from main
+	# after station nodes are known, so only station nodes skip pullback/arcs.
+
+## Called from main.gd after stations are placed so _station_set is populated first.
+func build_curves_and_render(station_nodes: Array) -> void:
+	for gpos_var in station_nodes:
+		_station_set[gpos_var as Vector2i] = true
+	_build_all_curves()
 	_render_all()
 
 func _build_materials() -> void:
@@ -130,9 +138,7 @@ func _apply_node_jitter() -> void:
 # ---------------------------------------------------------------------------
 
 func _is_pullback_node(gpos: Vector2i) -> bool:
-	var x: int = gpos.x
-	var z: int = gpos.y
-	return not (x == 0 or x == grid_width - 1 or z == 0 or z == grid_height - 1)
+	return not _station_set.has(gpos)   # every non-station node gets pullback + arcs
 
 func _pullback_point(node_gpos: Vector2i, neighbor_gpos: Vector2i) -> Vector3:
 	var center_pos: Vector3 = nodes[node_gpos]

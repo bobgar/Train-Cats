@@ -21,6 +21,7 @@ func _ready() -> void:
 	_add_ground()
 	var gen = _add_tracks()
 	var station_gpos: Array = _spawn_stations(gen)
+	gen.call("build_curves_and_render", station_gpos)  # deferred so station nodes skip pullback
 	_spawn_trains(gen, station_gpos)
 	_spawn_player()
 
