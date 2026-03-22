@@ -163,6 +163,8 @@ func _make_mesh_instance(size: Vector3, color: Color) -> MeshInstance3D:
 
 func _make_static_box(size: Vector3, mat: StandardMaterial3D) -> StaticBody3D:
 	var body := StaticBody3D.new()
+	body.collision_layer = 4   # separate layer so the player (mask=1) walks over rails
+	body.collision_mask  = 0
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size

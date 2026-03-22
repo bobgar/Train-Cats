@@ -14,14 +14,15 @@ const TRAIN_COLORS: Array = [
 const TrackGeneratorScript = preload("res://scripts/track_generator.gd")
 const StationScript = preload("res://scripts/station.gd")
 const TrainScript = preload("res://scripts/train.gd")
+const PlayerScript = preload("res://scripts/player.gd")
 
 func _ready() -> void:
 	_setup_environment()
-	_setup_camera()
 	_add_ground()
 	var gen = _add_tracks()
 	var station_gpos: Array = _spawn_stations(gen)
 	_spawn_trains(gen, station_gpos)
+	_spawn_player()
 
 func _setup_environment() -> void:
 	var env := WorldEnvironment.new()
@@ -45,14 +46,6 @@ func _setup_environment() -> void:
 	sun.light_energy = 1.4
 	sun.shadow_enabled = true
 	add_child(sun)
-
-func _setup_camera() -> void:
-	var cam := Camera3D.new()
-	cam.position = Vector3(0, 60, 70)
-	cam.rotation_degrees = Vector3(-38, 0, 0)
-	cam.fov = 55.0
-	cam.far = 600.0
-	add_child(cam)
 
 func _add_ground() -> void:
 	var body := StaticBody3D.new()
@@ -89,6 +82,12 @@ func _spawn_stations(gen) -> Array:
 		add_child(station)
 		station_gpos.append(gpos)
 	return station_gpos
+
+func _spawn_player() -> void:
+	var player = PlayerScript.new()
+	player.name = "Player"
+	player.position = Vector3(0, 2, 0)
+	add_child(player)
 
 func _spawn_trains(gen, stations: Array) -> void:
 	if stations.size() < 2:

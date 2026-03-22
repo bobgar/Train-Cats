@@ -1,34 +1,48 @@
 extends Node3D
 class_name Train
 
-## Each car independently samples its position along the path.
-## Features: acceleration/deceleration, lookahead avoidance, physics derailment.
+## Train AI state machine:
+##   MOVING             → normal forward travel with avoidance braking
+##   STOPPED            → dwell at station
+##   REVERSING          → backing up to a junction to yield
+##   WAITING_AT_JUNCTION→ holding at junction until path ahead clears
+##   DERAILED           → tumbling physics; respawns after timer
 
-enum State { MOVING, STOPPED, DERAILED }
+enum State { MOVING, STOPPED, REVERSING, WAITING_AT_JUNCTION, DERAILED }
 
 @export var max_speed: float = 8.0
 @export var acceleration: float = 5.0
 @export var deceleration: float = 7.0
 
-var _gen                        # TrackGenerator (untyped — class cache bootstrapping)
-var _station_nodes: Array       # Array of Vector2i
+var _gen                          # TrackGenerator (untyped — class-cache bootstrap)
+var _station_nodes: Array         # Array of Vector2i
+var _color: Color
+var _num_cars: int = 0
 var _state: State = State.MOVING
 var _stop_timer: float = 0.0
+var _respawn_timer: float = 0.0
 var _current_speed: float = 0.0
 
-# Path data rebuilt on each departure
-var _path: Array                # Array of Vector2i
-var _path_world: Array          # Array of Vector3
-var _path_cumlen: Array         # Array of float (cumulative distance)
+# How long to wait when stopped-while-blocked before deciding to reverse.
+# Randomised per train so two facing trains don't both reverse simultaneously.
+var _patience_limit: float = 2.0
+var _patience_timer: float = 0.0
+
+# Reversal targets
+var _reverse_target: float = 0.0        # _head_dist to reverse back to
+var _reverse_target_node: Vector2i      # grid node at that distance (for rerouting)
+var _reverse_wait_timer: float = 0.0    # how long to hold at junction
+
+# Path data
+var _path: Array                  # Array of Vector2i
+var _path_world: Array            # Array of Vector3
+var _path_cumlen: Array           # Array of float (cumulative distance per node)
 var _total_path_len: float = 0.0
 var _head_dist: float = 0.0
 
-# Per-car nodes, area sensors, and spacing
-var _cars: Array = []           # Array of Node3D
-var _car_areas: Array = []      # Array of Area3D (one per car, for collision)
+var _cars: Array = []             # Array of Node3D
+var _car_areas: Array = []        # Array of Area3D (collision sensors)
 var _car_spacing: float = 2.55
-
-var _lookahead: RayCast3D = null  # Forward proximity sensor on the locomotive
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -37,8 +51,10 @@ var _lookahead: RayCast3D = null  # Forward proximity sensor on the locomotive
 func setup(gen, stations: Array, start: Vector2i, color: Color, num_cars: int) -> void:
 	_gen = gen
 	_station_nodes = stations
+	_color = color
+	_num_cars = num_cars
+	_patience_limit = randf_range(1.5, 2.8)   # stagger so trains don't all reverse at once
 	_build_visuals(num_cars, color)
-	_build_lookahead()
 	_depart_from(start)
 
 func is_derailed() -> bool:
@@ -79,7 +95,6 @@ func _build_car(car: Node3D, car_len: float, color: Color, is_loco: bool) -> voi
 		for wz in [0.70, -0.70]:
 			_mi_cyl(car, 0.26, 0.20, Color(0.12, 0.12, 0.14), Vector3(wx, 0.28, wz))
 
-## Add an Area3D sensor to a car for train-train collision detection.
 func _attach_car_area(car: Node3D, car_len: float) -> void:
 	var area := Area3D.new()
 	area.collision_layer = 2
@@ -96,20 +111,6 @@ func _attach_car_area(car: Node3D, car_len: float) -> void:
 	area.area_entered.connect(_on_car_area_entered)
 	car.add_child(area)
 	_car_areas.append(area)
-
-## RayCast3D mounted on the locomotive, pointing forward. Detects trains ahead.
-func _build_lookahead() -> void:
-	if _cars.is_empty():
-		return
-	_lookahead = RayCast3D.new()
-	_lookahead.collision_mask = 2
-	_lookahead.collide_with_areas = true
-	_lookahead.collide_with_bodies = false
-	_lookahead.target_position = Vector3(7.0, 0.5, 0.0)  # 7 units ahead in local +X
-	_lookahead.enabled = true
-	for area in _car_areas:
-		_lookahead.add_exception(area)      # ignore own car sensors
-	_cars[0].add_child(_lookahead)
 
 func _mi_box(parent: Node3D, size: Vector3, color: Color, pos: Vector3) -> void:
 	var mi := MeshInstance3D.new()
@@ -137,8 +138,52 @@ func _mi_cyl(parent: Node3D, radius: float, height: float, color: Color, pos: Ve
 	parent.add_child(mi)
 
 # ---------------------------------------------------------------------------
+# Avoidance — synchronous direct-space ray, always current
+# ---------------------------------------------------------------------------
+
+func _is_path_blocked() -> bool:
+	if _cars.is_empty() or _path_world.is_empty():
+		return false
+	var origin: Vector3 = _cars[0].global_position + Vector3.UP * 0.5
+	var target: Vector3 = origin + _heading_dir() * 8.0
+	var excl: Array = []
+	for area in _car_areas:
+		excl.append((area as Area3D).get_rid())
+	var params := PhysicsRayQueryParameters3D.create(origin, target, 2, excl)
+	params.collide_with_areas = true
+	params.collide_with_bodies = false
+	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(params)
+	if result.is_empty():
+		return false
+	var collider = result.get("collider")
+	if collider is Area3D and collider.has_meta("owning_train"):
+		var other = collider.get_meta("owning_train")
+		return other != self and not other.is_derailed()
+	return false
+
+func _heading_dir() -> Vector3:
+	if _path_world.size() < 2:
+		return Vector3.FORWARD
+	return (_sample_path(_head_dist + 0.5) - _sample_path(_head_dist - 0.5)).normalized()
+
+# ---------------------------------------------------------------------------
 # Collision detection & derailment
 # ---------------------------------------------------------------------------
+
+## Called by Player when the cat swipes this train.
+## Derails the train and launches its physics cars in the swipe direction.
+func _swipe_derail(swipe_dir: Vector3, force: float) -> void:
+	if _state == State.DERAILED:
+		return
+	_state = State.DERAILED
+	var base_vel := swipe_dir * force * 0.5 + _heading_dir() * _current_speed
+	_current_speed = 0.0
+	_respawn_timer = 5.5
+	for car in _cars:
+		var launch: Vector3 = base_vel + swipe_dir * force + Vector3(
+			randf_range(-1.5, 1.5), randf_range(1.5, 4.0), randf_range(-1.5, 1.5))
+		_spawn_physics_car(car, launch)
+		car.visible = false
 
 func _on_car_area_entered(other_area: Area3D) -> void:
 	if _state == State.DERAILED:
@@ -148,19 +193,17 @@ func _on_car_area_entered(other_area: Area3D) -> void:
 	var other_train = other_area.get_meta("owning_train")
 	if other_train == self or other_train.is_derailed():
 		return
-	# Only crash if we're moving fast enough to matter
 	if _current_speed >= 1.8:
 		_derail()
 
-## Switch to DERAILED state: spawn tumbling physics cars, propagate to anything overlapping.
 func _derail() -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
 	var vel := _heading_dir() * _current_speed
 	_current_speed = 0.0
+	_respawn_timer = 5.5
 
-	# Propagate derailment to any trains we're physically touching right now
 	for area in _car_areas:
 		for other_var in area.get_overlapping_areas():
 			var other_area := other_var as Area3D
@@ -170,59 +213,52 @@ func _derail() -> void:
 					other.call("_derail")
 
 	for car in _cars:
-		_spawn_physics_car(car, vel)
+		var scatter: Vector3 = vel + Vector3(
+			randf_range(-1.5, 1.5), randf_range(0.5, 3.0), randf_range(-1.5, 1.5))
+		_spawn_physics_car(car, scatter)
 		car.visible = false
 
-func _heading_dir() -> Vector3:
-	if _path_world.size() < 2:
-		return Vector3.FORWARD
-	return (_sample_path(_head_dist + 0.5) - _sample_path(_head_dist - 0.5)).normalized()
-
-## Spawn a tumbling RigidBody3D in place of a car when derailed.
-func _spawn_physics_car(car: Node3D, base_vel: Vector3) -> void:
+func _spawn_physics_car(car: Node3D, launch_vel: Vector3) -> void:
 	var rb := RigidBody3D.new()
 	rb.global_transform = car.global_transform
 	rb.mass = 1.5
-
-	# Read body color from the first MeshInstance3D child
-	var car_color := Color(0.5, 0.5, 0.5)
+	# Copy every MeshInstance3D from the original car so it keeps its look.
+	# Build a list of the new materials so we can fade them all together.
+	var fade_mats: Array = []
 	for child in car.get_children():
 		if child is MeshInstance3D:
-			var mat := child.material_override as StandardMaterial3D
-			if mat != null:
-				car_color = mat.albedo_color
-			break
-
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(2.1, 1.3, 1.5)
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = car_color
-	mi.material_override = mat
-	mi.position = Vector3(0, 0.65, 0)
-	rb.add_child(mi)
-
+			var src := child as MeshInstance3D
+			var mi  := MeshInstance3D.new()
+			mi.mesh     = src.mesh
+			mi.position = src.position
+			mi.rotation = src.rotation
+			mi.scale    = src.scale
+			var orig := src.material_override as StandardMaterial3D
+			var new_mat := StandardMaterial3D.new()
+			if orig != null:
+				new_mat.albedo_color = orig.albedo_color
+			new_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mi.material_override = new_mat
+			rb.add_child(mi)
+			fade_mats.append(new_mat)
+	# Bounding-box collider (approximate is fine for tumbling physics)
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(2.1, 1.3, 1.5)
 	cs.shape = shape
 	cs.position = Vector3(0, 0.65, 0)
 	rb.add_child(cs)
-
-	# Launch with train's current velocity + random scatter
-	rb.linear_velocity = base_vel + Vector3(
-		randf_range(-1.5, 1.5),
-		randf_range(0.5, 3.0),
-		randf_range(-1.5, 1.5)
-	)
+	rb.linear_velocity  = launch_vel
 	rb.angular_velocity = Vector3(
-		randf_range(-5.0, 5.0),
-		randf_range(-2.0, 2.0),
-		randf_range(-5.0, 5.0)
-	)
-
+		randf_range(-5.0, 5.0), randf_range(-2.0, 2.0), randf_range(-5.0, 5.0))
 	get_parent().add_child(rb)
+	var tween := rb.create_tween()
+	tween.tween_interval(3.5)
+	tween.tween_method(func(a: float) -> void:
+		for m in fade_mats:
+			(m as StandardMaterial3D).albedo_color.a = a
+		, 1.0, 0.0, 1.5)
+	tween.tween_callback(func() -> void: rb.queue_free())
 
 # ---------------------------------------------------------------------------
 # Path sampling
@@ -268,10 +304,10 @@ func _depart_from(from: Vector2i) -> void:
 			options.append(s)
 	if options.is_empty():
 		return
-	var dest: Vector2i = options[randi() % options.size()]
-	_path = _bfs(from, dest)
+	_path = _bfs(from, options[randi() % options.size()])
 	_build_path_data()
 	_head_dist = (_cars.size() - 1) * _car_spacing
+	_patience_timer = 0.0
 	_state = State.MOVING
 	_update_car_transforms()
 
@@ -294,26 +330,35 @@ func _bfs(start: Vector2i, goal: Vector2i) -> Array:
 
 func _process(delta: float) -> void:
 	if _state == State.DERAILED:
+		_respawn_timer -= delta
+		if _respawn_timer <= 0.0:
+			_respawn()
 		return
 	match _state:
-		State.MOVING:
-			_tick_moving(delta)
-		State.STOPPED:
-			_stop_timer -= delta
-			if _stop_timer <= 0.0:
-				_depart_from(_path[_path.size() - 1])
+		State.MOVING:             _tick_moving(delta)
+		State.STOPPED:            _tick_stopped(delta)
+		State.REVERSING:          _tick_reversing(delta)
+		State.WAITING_AT_JUNCTION: _tick_waiting_at_junction(delta)
+
+func _tick_stopped(delta: float) -> void:
+	_stop_timer -= delta
+	if _stop_timer <= 0.0:
+		_depart_from(_path[_path.size() - 1])
 
 func _tick_moving(delta: float) -> void:
-	# --- Avoidance: slow to zero if another train is directly ahead ---
-	var want_speed := max_speed
-	if _lookahead != null and _lookahead.is_colliding():
-		var hit = _lookahead.get_collider()
-		if hit is Area3D and hit.has_meta("owning_train"):
-			var other = hit.get_meta("owning_train")
-			if other != self and not other.is_derailed():
-				want_speed = 0.0
+	var blocked := _is_path_blocked()
 
-	# --- Acceleration / deceleration ---
+	# Patience: count up while fully stopped and blocked.
+	# When patience runs out, reverse to yield at a junction.
+	if blocked and _current_speed < 0.15:
+		_patience_timer += delta
+		if _patience_timer >= _patience_limit:
+			_start_reversing()
+			return
+	else:
+		_patience_timer = 0.0
+
+	var want_speed := max_speed if not blocked else 0.0
 	var rate := deceleration if _current_speed > want_speed else acceleration
 	_current_speed = move_toward(_current_speed, want_speed, rate * delta)
 
@@ -326,6 +371,69 @@ func _tick_moving(delta: float) -> void:
 	else:
 		_update_car_transforms()
 
+## Begin reversing: find the nearest junction behind the locomotive and back up to it.
+func _start_reversing() -> void:
+	_patience_timer = 0.0
+	_reverse_target = _find_junction_behind()
+
+	# Already at or behind the junction — skip straight to waiting
+	if _head_dist - _reverse_target < 0.5:
+		_state = State.WAITING_AT_JUNCTION
+		_reverse_wait_timer = randf_range(1.5, 3.0)
+		return
+
+	_state = State.REVERSING
+
+## Walk backwards along _path from the current position to find the nearest
+## junction node (3+ connections). Returns the cumulative path distance there.
+func _find_junction_behind() -> float:
+	# Find the index of the path node just behind the current head position
+	var cur_idx := 0
+	for i in range(_path_cumlen.size() - 1):
+		if _head_dist >= _path_cumlen[i]:
+			cur_idx = i
+
+	for i in range(cur_idx, -1, -1):
+		var gpos: Vector2i = _path[i]
+		if (_gen.adjacency.get(gpos, []) as Array).size() >= 3:
+			_reverse_target_node = gpos
+			return _path_cumlen[i]
+
+	# No junction on this path — reverse to start and reroute from there
+	_reverse_target_node = _path[0]
+	return 0.0
+
+## Reverse along the current path (decreasing _head_dist) until reaching the junction.
+## The train keeps facing forward (looks like it's reversing, not turning around).
+func _tick_reversing(delta: float) -> void:
+	var rev_speed := max_speed * 0.55
+	var rate := deceleration if _current_speed > rev_speed else acceleration
+	_current_speed = move_toward(_current_speed, rev_speed, rate * delta)
+
+	_head_dist -= _current_speed * delta
+
+	if _head_dist <= _reverse_target:
+		_head_dist = maxf(_reverse_target, 0.0)
+		_current_speed = 0.0
+		_update_car_transforms()
+		_state = State.WAITING_AT_JUNCTION
+		_reverse_wait_timer = randf_range(2.0, 4.0)
+	else:
+		_update_car_transforms()
+
+## Hold at the junction. Resume forward the moment the path clears.
+## If still blocked when the timer expires, reroute to a new destination.
+func _tick_waiting_at_junction(delta: float) -> void:
+	_reverse_wait_timer -= delta
+
+	if not _is_path_blocked():
+		_patience_timer = 0.0
+		_state = State.MOVING
+		return
+
+	if _reverse_wait_timer <= 0.0:
+		_depart_from(_reverse_target_node)
+
 func _update_car_transforms() -> void:
 	for i in range(_cars.size()):
 		var car_dist: float = _head_dist - i * _car_spacing
@@ -337,3 +445,13 @@ func _update_car_transforms() -> void:
 func _arrive() -> void:
 	_state = State.STOPPED
 	_stop_timer = randf_range(2.5, 5.5)
+
+func _respawn() -> void:
+	var new_train = get_script().new()
+	new_train.max_speed   = max_speed
+	new_train.acceleration = acceleration
+	new_train.deceleration = deceleration
+	get_parent().add_child(new_train)
+	new_train.call("setup", _gen, _station_nodes,
+		_station_nodes[randi() % _station_nodes.size()], _color, _num_cars)
+	queue_free()
