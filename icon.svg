@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">
+  <rect width="128" height="128" rx="16" fill="#3a2a1e"/>
+  <rect x="20" y="55" width="88" height="30" rx="6" fill="#cc6622"/>
+  <rect x="30" y="45" width="60" height="20" rx="4" fill="#dd8844"/>
+  <circle cx="35" cy="88" r="10" fill="#222"/>
+  <circle cx="93" cy="88" r="10" fill="#222"/>
+  <circle cx="35" cy="88" r="5" fill="#555"/>
+  <circle cx="93" cy="88" r="5" fill="#555"/>
+  <rect x="10" y="80" width="108" height="6" rx="2" fill="#888"/>
+  <text x="64" y="40" font-size="14" text-anchor="middle" fill="#ffcc66" font-family="sans-serif" font-weight="bold">TRAIN CATS</text>
+</svg>
