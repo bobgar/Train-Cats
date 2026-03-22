@@ -35,8 +35,9 @@ var _reverse_wait_timer: float = 0.0    # how long to hold at junction
 
 # Path data
 var _path: Array                  # Array of Vector2i
-var _path_world: Array            # Array of Vector3
-var _path_cumlen: Array           # Array of float (cumulative distance per node)
+var _path_world: Array            # Array of Vector3 (dense, follows Bezier curves)
+var _path_cumlen: Array           # Array of float (cumulative distance per dense point)
+var _path_node_cumlen: Array      # Array of float (cumulative distance per grid node in _path)
 var _total_path_len: float = 0.0
 var _head_dist: float = 0.0
 
@@ -265,15 +266,44 @@ func _spawn_physics_car(car: Node3D, launch_vel: Vector3) -> void:
 # ---------------------------------------------------------------------------
 
 func _build_path_data() -> void:
-	_path_world = []
-	_path_cumlen = [0.0]
-	_total_path_len = 0.0
-	for i in range(_path.size()):
-		_path_world.append(_gen.nodes[_path[i]])
-		if i > 0:
-			var seg: float = (_path_world[i - 1] as Vector3).distance_to(_path_world[i])
-			_total_path_len += seg
-			_path_cumlen.append(_total_path_len)
+	_path_world       = []
+	_path_cumlen      = [0.0]
+	_path_node_cumlen = []
+	_total_path_len   = 0.0
+	var first_segment := true
+	for i in range(_path.size() - 1):
+		var a: Vector2i = _path[i]
+		var b: Vector2i = _path[i + 1]
+		if i == 0:
+			_path_node_cumlen.append(_total_path_len)
+		var pts: Array = _gen.get_edge_curve(a, b)
+		if pts.is_empty():
+			pts = [_gen.nodes[a], _gen.nodes[b]]
+		# Skip index 0 after the first segment — it duplicates the previous segment's last point
+		var start_j: int = 0 if first_segment else 1
+		for j in range(start_j, pts.size()):
+			var pt: Vector3 = pts[j]
+			_path_world.append(pt)
+			if _path_world.size() > 1:
+				var seg: float = (_path_world[-2] as Vector3).distance_to(pt)
+				_total_path_len += seg
+				_path_cumlen.append(_total_path_len)
+		first_segment = false
+		# Record cumulative distance at grid node b (before any junction arc)
+		_path_node_cumlen.append(_total_path_len)
+		# Splice junction arc between this edge and the next
+		if _gen._is_pullback_node(b) and i + 2 < _path.size():
+			var arc: Array = _gen.get_junction_arc(b, a, _path[i + 2])
+			for j in range(1, arc.size()):   # skip index 0 = duplicate of edge endpoint
+				var pt: Vector3 = arc[j]
+				_path_world.append(pt)
+				var seg: float = (_path_world[-2] as Vector3).distance_to(pt)
+				_total_path_len += seg
+				_path_cumlen.append(_total_path_len)
+	# Single-node path edge case
+	if _path_world.is_empty() and _path.size() > 0:
+		_path_world.append(_gen.nodes[_path[0]])
+		_path_node_cumlen.append(0.0)
 
 func _sample_path(dist: float) -> Vector3:
 	if _path_world.size() == 0:
@@ -387,17 +417,18 @@ func _start_reversing() -> void:
 ## Walk backwards along _path from the current position to find the nearest
 ## junction node (3+ connections). Returns the cumulative path distance there.
 func _find_junction_behind() -> float:
-	# Find the index of the path node just behind the current head position
+	# Use _path_node_cumlen (one entry per grid node) to avoid out-of-bounds on
+	# _path[], which is far smaller than the dense _path_cumlen after Bezier expansion.
 	var cur_idx := 0
-	for i in range(_path_cumlen.size() - 1):
-		if _head_dist >= _path_cumlen[i]:
+	for i in range(_path_node_cumlen.size() - 1):
+		if _head_dist >= _path_node_cumlen[i]:
 			cur_idx = i
 
 	for i in range(cur_idx, -1, -1):
 		var gpos: Vector2i = _path[i]
 		if (_gen.adjacency.get(gpos, []) as Array).size() >= 3:
 			_reverse_target_node = gpos
-			return _path_cumlen[i]
+			return _path_node_cumlen[i]
 
 	# No junction on this path — reverse to start and reroute from there
 	_reverse_target_node = _path[0]
