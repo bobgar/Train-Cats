@@ -58,6 +58,7 @@ var _customer_manager: Node = null
 var _hud: Node              = null
 var _title_screen: Node     = null
 var _round_scoreboard: Node = null
+var _pause_overlay: CanvasLayer = null
 var _gameplay_cam: Camera3D = null   # normal play camera (child of player)
 var _cinematic_cam: Camera3D = null  # zoom-in cam during round end
 
@@ -94,6 +95,7 @@ func _ready() -> void:
 	_round_scoreboard.continue_pressed.connect(_on_scoreboard_continue)
 
 	_connect_hud_signals()
+	_create_pause_menu()
 
 	# Start paused at title screen
 	get_tree().paused = true
@@ -131,7 +133,7 @@ func _on_hud_time_up() -> void:
 
 func _end_round() -> void:
 	_game_state = GameState.ROUND_END
-	_hud.stop()
+	_hud.call("stop")
 	get_tree().paused = true
 
 	var stats: Dictionary = _customer_manager.call("get_stats")
@@ -165,11 +167,13 @@ func _on_scoreboard_continue() -> void:
 		# Game over — show title with game-over header
 		_game_state    = GameState.GAME_OVER
 		_current_round = 1
+		_hud.call("stop")
 		_title_screen.configure(true)
 
 func _round_requirement(round_num: int) -> int:
-	var n := float(round_num)
-	return roundi(9.0 * n * n + 9.0 * n + 22.0)
+	var n   := float(round_num)
+	var raw := 9.0 * n * n + 9.0 * n + 22.0
+	return int(round(raw / 10.0)) * 10   # round to nearest 10
 
 # ---------------------------------------------------------------------------
 # Cinematic camera zoom
@@ -592,3 +596,101 @@ func _spawn_trains(gen, stations: Array, manager: Node) -> void:
 # Connect HUD time_up after HUD exists — called at end of _ready
 func _connect_hud_signals() -> void:
 	_hud.time_up.connect(_on_hud_time_up)
+
+# ---------------------------------------------------------------------------
+# Pause menu
+# ---------------------------------------------------------------------------
+
+func _create_pause_menu() -> void:
+	_pause_overlay = CanvasLayer.new()
+	_pause_overlay.layer        = 30
+	_pause_overlay.process_mode = Node.PROCESS_MODE_ALWAYS
+	_pause_overlay.visible      = false
+	_pause_overlay.name         = "PauseMenu"
+
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pause_overlay.add_child(root)
+
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.72)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	root.add_child(bg)
+
+	# Panel
+	var panel := ColorRect.new()
+	panel.color = Color(0.10, 0.09, 0.08, 0.96)
+	panel.anchor_left = 0.25;  panel.anchor_right  = 0.75
+	panel.anchor_top  = 0.28;  panel.anchor_bottom = 0.74
+	panel.offset_left = 0;     panel.offset_right  = 0
+	panel.offset_top  = 0;     panel.offset_bottom = 0
+	root.add_child(panel)
+
+	_pause_lbl(root, "PAUSED",                0.25, 0.75, 0.30, 0.43, 44, Color.WHITE)
+	_pause_lbl(root, "Return to title screen?",0.25, 0.75, 0.45, 0.54, 26, Color(0.90, 0.90, 0.90))
+	_pause_lbl(root, "Space — Quit to Title", 0.25, 0.75, 0.57, 0.65, 22, Color(1.0, 1.0, 0.50))
+	_pause_lbl(root, "Escape — Resume",       0.25, 0.75, 0.65, 0.73, 22, Color(0.75, 0.75, 0.75))
+
+	add_child(_pause_overlay)
+
+func _pause_lbl(root: Control, text: String, al: float, ar: float,
+		at: float, ab: float, fsize: int, col: Color) -> void:
+	var lbl := Label.new()
+	lbl.text                 = text
+	lbl.anchor_left          = al;  lbl.anchor_right  = ar
+	lbl.anchor_top           = at;  lbl.anchor_bottom = ab
+	lbl.offset_left          = 0;   lbl.offset_right  = 0
+	lbl.offset_top           = 0;   lbl.offset_bottom = 0
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	var s := LabelSettings.new()
+	s.font_size     = fsize
+	s.font_color    = col
+	s.outline_size  = 2
+	s.outline_color = Color(0, 0, 0, 0.9)
+	lbl.label_settings = s
+	root.add_child(lbl)
+
+func _show_pause_menu() -> void:
+	get_tree().paused      = true
+	_pause_overlay.visible = true
+
+func _resume_game() -> void:
+	_pause_overlay.visible = false
+	get_tree().paused      = false
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+func _quit_to_title() -> void:
+	_pause_overlay.visible = false
+	get_tree().paused      = false
+	_current_round = 1
+	_game_state    = GameState.TITLE
+	_hud.call("stop")
+	if _gameplay_cam != null:
+		_gameplay_cam.current = true
+	if _cinematic_cam != null:
+		_cinematic_cam.current = false
+	_title_screen.configure(false)
+
+# ---------------------------------------------------------------------------
+# Global input — Escape shows/hides pause menu during gameplay
+# ---------------------------------------------------------------------------
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var ke := event as InputEventKey
+	if not ke.pressed or ke.echo:
+		return
+
+	# Handle pause menu navigation first (fires even while tree is paused)
+	if _pause_overlay != null and _pause_overlay.visible:
+		if ke.keycode == KEY_ESCAPE:
+			_resume_game()
+		elif ke.keycode == KEY_SPACE:
+			_quit_to_title()
+		return
+
+	# Show pause menu on Escape during active gameplay
+	if ke.keycode == KEY_ESCAPE and _game_state == GameState.PLAYING:
+		_show_pause_menu()

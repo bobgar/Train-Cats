@@ -1,64 +1,88 @@
 extends CanvasLayer
 class_name HUD
 
-## In-game HUD: round timer (centre top), score (top-left), round number (top-right).
-## Emits time_up when the 60-second round timer expires.
+## In-game HUD using anchor-based layout so elements stay in place on any
+## screen size.  Score (top-left), Timer (top-centre), Round + Need (top-right).
 
 signal time_up
 
 const ROUND_DURATION := 60.0
 
-var _timer_label: Label = null
-var _score_label: Label = null
-var _round_label: Label = null
+var _timer_label:  Label = null
+var _score_label:  Label = null
+var _round_label:  Label = null
+var _needed_label: Label = null
+var _root:         Control = null
 
-var _time_left: float  = ROUND_DURATION
-var _active: bool      = false
+var _time_left: float = ROUND_DURATION
+var _active:    bool  = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	layer = 10
+	layer   = 10
+	visible = false
 	_build_ui()
 
 func _build_ui() -> void:
-	var viewport_w := 1280.0   # design resolution — labels anchor by position
+	_root = Control.new()
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_root)
 
 	# Score — top-left
-	_score_label = _make_label("Score: 0", Vector2(16, 16), 28)
-	add_child(_score_label)
+	_score_label  = _a_lbl("Score: 0",  0.01, 0.35, 0.01, 0.09, 28,
+		Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 
-	# Round — top-right
-	_round_label = _make_label("Round 1", Vector2(viewport_w - 160, 16), 28)
-	add_child(_round_label)
+	# Timer — top-centre (larger font)
+	_timer_label  = _a_lbl("1:00",      0.35, 0.65, 0.01, 0.09, 36,
+		Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
 
-	# Timer — top-centre
-	_timer_label = _make_label("1:00", Vector2(viewport_w * 0.5 - 60, 16), 36)
-	add_child(_timer_label)
+	# Round number — top-right first line
+	_round_label  = _a_lbl("Round 1",   0.65, 0.99, 0.01, 0.07, 24,
+		Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT)
 
-func _make_label(txt: String, pos: Vector2, fsize: int) -> Label:
+	# Points needed — top-right second line
+	_needed_label = _a_lbl("Need: 40",  0.65, 0.99, 0.07, 0.13, 20,
+		Color(1.0, 1.0, 0.55), HORIZONTAL_ALIGNMENT_RIGHT)
+
+func _a_lbl(text: String, al: float, ar: float, at: float, ab: float,
+		fsize: int, col: Color, halign: HorizontalAlignment) -> Label:
 	var lbl := Label.new()
-	lbl.text     = txt
-	lbl.position = pos
-	var settings := LabelSettings.new()
-	settings.font_size     = fsize
-	settings.font_color    = Color(1.0, 1.0, 1.0)
-	settings.outline_size  = 3
-	settings.outline_color = Color(0.0, 0.0, 0.0, 0.9)
-	lbl.label_settings = settings
+	lbl.text                 = text
+	lbl.anchor_left          = al
+	lbl.anchor_right         = ar
+	lbl.anchor_top           = at
+	lbl.anchor_bottom        = ab
+	lbl.offset_left          = 0
+	lbl.offset_right         = 0
+	lbl.offset_top           = 0
+	lbl.offset_bottom        = 0
+	lbl.horizontal_alignment = halign
+	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
+	var s := LabelSettings.new()
+	s.font_size     = fsize
+	s.font_color    = col
+	s.outline_size  = 3
+	s.outline_color = Color(0.0, 0.0, 0.0, 0.9)
+	lbl.label_settings = s
+	_root.add_child(lbl)
 	return lbl
 
 # ---------------------------------------------------------------------------
-# Public API (called from main.gd)
+# Public API
 # ---------------------------------------------------------------------------
 
 func start_round(round_num: int, required: int) -> void:
-	_time_left = ROUND_DURATION
-	_active    = true
-	_round_label.text = "Round %d  (need %d)" % [round_num, required]
+	_time_left             = ROUND_DURATION
+	_active                = true
+	visible                = true
+	_round_label.text      = "Round %d" % round_num
+	_needed_label.text     = "Need: %d pts" % required
+	_score_label.text      = "Score: 0"
 	_update_timer_label()
 
 func stop() -> void:
-	_active = false
+	_active  = false
+	visible  = false
 
 func update_score(new_score: int) -> void:
 	_score_label.text = "Score: %d" % new_score
@@ -81,11 +105,6 @@ func _process(delta: float) -> void:
 
 func _update_timer_label() -> void:
 	var secs := int(ceil(_time_left))
-	var m    := secs / 60
-	var s    := secs % 60
-	_timer_label.text = "%d:%02d" % [m, s]
-	# Flash red in the last 10 seconds
-	if _time_left <= 10.0:
-		_timer_label.label_settings.font_color = Color(1.0, 0.3, 0.3)
-	else:
-		_timer_label.label_settings.font_color = Color(1.0, 1.0, 1.0)
+	_timer_label.text = "%d:%02d" % [secs / 60, secs % 60]
+	_timer_label.label_settings.font_color = \
+		Color(1.0, 0.3, 0.3) if _time_left <= 10.0 else Color(1.0, 1.0, 1.0)

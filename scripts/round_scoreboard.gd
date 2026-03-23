@@ -1,109 +1,113 @@
 extends CanvasLayer
 class_name RoundScoreboard
 
-## Scoreboard panel that swings in from above between rounds.
-## Shows score vs required, impressed count, hit count.
+## Between-round scoreboard.
+## Swings in from above by animating the CanvasLayer's own offset property,
+## so the whole panel slides down without touching anchor values.
+## All text positions are anchor-based fractions of the viewport.
 
 signal continue_pressed
 
-var _panel: Control = null
-var _title_label: Label = null
-var _score_label: Label = null
-var _req_label: Label = null
+var _title_label:     Label = null
+var _score_label:     Label = null
+var _req_label:       Label = null
 var _impressed_label: Label = null
-var _hit_label: Label = null
-var _result_label: Label = null
-var _hint_label: Label = null
+var _hit_label:       Label = null
+var _result_label:    Label = null
+var _root:            Control = null
 
 var _ready_for_input: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	layer = 15
+	layer   = 15
 	visible = false
 	_build_ui()
 
 func _build_ui() -> void:
-	# Semi-transparent dark background
+	_root = Control.new()
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_root)
+
+	# Dimmed full-screen backdrop
 	var bg := ColorRect.new()
 	bg.color = Color(0.0, 0.0, 0.0, 0.65)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	_root.add_child(bg)
 
-	# Panel
-	_panel = Control.new()
-	_panel.size     = Vector2(560, 380)
-	_panel.position = Vector2(640 - 280, -400)   # starts off-screen above
-	add_child(_panel)
+	# Dark panel box
+	_a_rect(Color(0.12, 0.10, 0.08, 0.96), 0.12, 0.88, 0.08, 0.93)
 
-	var panel_bg := ColorRect.new()
-	panel_bg.color    = Color(0.12, 0.10, 0.08, 0.95)
-	panel_bg.size     = Vector2(560, 380)
-	panel_bg.position = Vector2.ZERO
-	_panel.add_child(panel_bg)
+	# Gold accent strips (top and bottom of panel)
+	_a_rect(Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.08, 0.095)
+	_a_rect(Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.915, 0.93)
 
-	var border := ColorRect.new()
-	border.color    = Color(0.80, 0.70, 0.30)
-	border.size     = Vector2(560, 4)
-	border.position = Vector2(0, 0)
-	_panel.add_child(border)
-	var border2 := ColorRect.new()
-	border2.color    = Color(0.80, 0.70, 0.30)
-	border2.size     = Vector2(560, 4)
-	border2.position = Vector2(0, 376)
-	_panel.add_child(border2)
+	# Content labels — all horizontally centred inside the panel column
+	_title_label     = _a_lbl("Round Complete!",       0.12, 0.88, 0.10, 0.21, 36, Color(1.0, 0.90, 0.30))
+	_score_label     = _a_lbl("Score: 0",              0.12, 0.88, 0.23, 0.33, 30, Color.WHITE)
+	_req_label       = _a_lbl("Required: 0",           0.12, 0.88, 0.34, 0.42, 26, Color(0.85, 0.85, 0.85))
+	_impressed_label = _a_lbl("Customers impressed: 0",0.12, 0.88, 0.46, 0.54, 24, Color(0.70, 1.0, 0.70))
+	_hit_label       = _a_lbl("Customers hit: 0",      0.12, 0.88, 0.55, 0.63, 24, Color(1.0, 0.70, 0.40))
+	_result_label    = _a_lbl("PASSED!",               0.12, 0.88, 0.68, 0.81, 42, Color(0.30, 1.0, 0.40))
+	_a_lbl("Press Space to continue",                  0.12, 0.88, 0.85, 0.92, 20, Color(0.75, 0.75, 0.75))
 
-	_title_label    = _panel_label("Round Complete!", Vector2(280, 28),  36, Color(1.0, 0.90, 0.30), true)
-	_score_label    = _panel_label("Score: 0",        Vector2(280, 90),  30, Color.WHITE, true)
-	_req_label      = _panel_label("Required: 0",     Vector2(280, 130), 26, Color(0.85, 0.85, 0.85), true)
-	_impressed_label = _panel_label("Impressed: 0",   Vector2(280, 185), 24, Color(0.70, 1.0, 0.70), true)
-	_hit_label      = _panel_label("Hit by debris: 0",Vector2(280, 220), 24, Color(1.0, 0.70, 0.40), true)
-	_result_label   = _panel_label("PASSED",          Vector2(280, 290), 40, Color(0.30, 1.0, 0.40), true)
-	_hint_label     = _panel_label("Press Space to continue", Vector2(280, 348), 20, Color(0.75, 0.75, 0.75), true)
+func _a_rect(col: Color, al: float, ar: float, at: float, ab: float) -> void:
+	var r := ColorRect.new()
+	r.color         = col
+	r.anchor_left   = al;  r.anchor_right  = ar
+	r.anchor_top    = at;  r.anchor_bottom = ab
+	r.offset_left   = 0;   r.offset_right  = 0
+	r.offset_top    = 0;   r.offset_bottom = 0
+	_root.add_child(r)
 
-func _panel_label(txt: String, pos: Vector2, fsize: int, col: Color, centred: bool) -> Label:
+func _a_lbl(text: String, al: float, ar: float, at: float, ab: float,
+		fsize: int, col: Color) -> Label:
 	var lbl := Label.new()
-	lbl.text     = txt
-	lbl.position = pos - (Vector2(280, 12) if centred else Vector2.ZERO)
-	if centred:
-		lbl.size = Vector2(560, 40)
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.text                 = text
+	lbl.anchor_left          = al
+	lbl.anchor_right         = ar
+	lbl.anchor_top           = at
+	lbl.anchor_bottom        = ab
+	lbl.offset_left          = 0;  lbl.offset_right  = 0
+	lbl.offset_top           = 0;  lbl.offset_bottom = 0
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
 	var s := LabelSettings.new()
 	s.font_size     = fsize
 	s.font_color    = col
 	s.outline_size  = 2
 	s.outline_color = Color(0, 0, 0, 0.9)
 	lbl.label_settings = s
-	_panel.add_child(lbl)
+	_root.add_child(lbl)
 	return lbl
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-func show_result(score: int, required: int, impressed: int, hit: int, passed: bool, round_num: int) -> void:
+func show_result(score: int, required: int, impressed: int, hit: int,
+		passed: bool, round_num: int) -> void:
 	_ready_for_input = false
 	visible = true
 
-	_title_label.text    = "Round %d Complete!" % round_num if passed else "Round %d Failed" % round_num
-	_score_label.text    = "Score: %d" % score
-	_req_label.text      = "Required: %d" % required
+	var title_base := "Round %d Complete!" if passed else "Round %d Failed"
+	_title_label.text     = title_base % round_num
+	_score_label.text     = "Score: %d" % score
+	_req_label.text       = "Required: %d" % required
 	_impressed_label.text = "Customers impressed: %d" % impressed
-	_hit_label.text      = "Customers hit: %d" % hit
+	_hit_label.text       = "Customers hit by debris: %d" % hit
 
-	if passed:
-		_result_label.text = "PASSED!"
-		_result_label.label_settings.font_color = Color(0.30, 1.0, 0.40)
-	else:
-		_result_label.text = "FAILED"
-		_result_label.label_settings.font_color = Color(1.0, 0.30, 0.30)
+	_result_label.text = "PASSED!" if passed else "FAILED"
+	_result_label.label_settings.font_color = \
+		Color(0.30, 1.0, 0.40) if passed else Color(1.0, 0.30, 0.30)
 
-	# Swing panel in from above (bounce ease)
-	_panel.position.y = -400
+	# Slide the whole layer in from above
+	var vp_h: float = get_viewport().get_visible_rect().size.y
+	offset = Vector2(0.0, -vp_h)
 	var tw := create_tween()
-	tw.tween_property(_panel, "position:y", 170.0, 0.55).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BOUNCE)
-	tw.tween_callback(func() -> void:
-		_ready_for_input = true)
+	tw.tween_property(self, "offset", Vector2.ZERO, 0.55) \
+		.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BOUNCE)
+	tw.tween_callback(func() -> void: _ready_for_input = true)
 
 # ---------------------------------------------------------------------------
 # Input
@@ -114,5 +118,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_SPACE:
+			offset  = Vector2.ZERO
 			visible = false
 			continue_pressed.emit()
