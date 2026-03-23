@@ -50,7 +50,9 @@ func _build_ui() -> void:
 	var ctrl_text := (
 		"Controls:\n" +
 		"  WASD / Arrow keys — Move\n" +
-		"  Space — Swipe attack\n" +
+		"  Shift — Run\n" +
+		"  Space — Jump\n" +
+		"  E — Swipe\n" +
 		"  Mouse — Look around"
 	)
 	var ctrl_lbl := Label.new()
@@ -64,8 +66,8 @@ func _build_ui() -> void:
 	ctrl_lbl.label_settings = s1
 	add_child(ctrl_lbl)
 
-	# Press any key prompt
-	_make_label_centered("Press any key to play", 580, 26, Color(1.0, 1.0, 0.5))
+	# Press space prompt
+	_make_label_centered("Press Space to play", 580, 26, Color(1.0, 1.0, 0.5))
 
 func _make_label(txt: String, pos: Vector2, fsize: int, col: Color) -> Label:
 	var lbl := Label.new()
@@ -130,8 +132,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not _ready_for_input:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
-		visible = false
-		continue_pressed.emit()
-	elif event is InputEventMouseButton and event.pressed:
-		visible = false
-		continue_pressed.emit()
+		if event.keycode == KEY_SPACE:
+			visible = false
+			continue_pressed.emit()

@@ -149,7 +149,7 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventMouseMotion and Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 		_cam_yaw   -= event.relative.x * MOUSE_SENS
-		_cam_pitch  = clamp(_cam_pitch + event.relative.y * MOUSE_SENS, -10.0, 62.0)
+		_cam_pitch  = clamp(_cam_pitch + event.relative.y * MOUSE_SENS, 5.0, 62.0)
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
@@ -228,8 +228,10 @@ func _process(_delta: float) -> void:
 	var sp := sin(pitch_r)
 	# Orbit offset: camera sits at (yaw, pitch) spherical coords around player
 	var offset := Vector3(sin(yaw_r) * cp, sp, cos(yaw_r) * cp) * CAM_DIST
-	var look_at := global_position + Vector3.UP * 0.8
-	_camera.global_position = look_at + offset
+	var look_at    := global_position + Vector3.UP * 0.8
+	var cam_pos    := look_at + offset
+	cam_pos.y       = maxf(cam_pos.y, 1.5)   # never clip below the table surface
+	_camera.global_position = cam_pos
 	# look_at is safe as long as camera is never directly above (pitch < 90°, clamped to 62°)
 	_camera.look_at(look_at, Vector3.UP)
 

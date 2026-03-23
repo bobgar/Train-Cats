@@ -38,9 +38,11 @@ const WALL_H   := WALL_TOP - ROOM_FLOOR   # 50
 const WALL_CY  := ROOM_FLOOR + WALL_H * 0.5   # 3  (wall centre Y)
 
 # ---------------------------------------------------------------------------
-# Round progression: points needed to pass each round (index 0 = round 1)
+# Round progression: points needed to pass each round
+# Formula: 9n² + 9n + 22  (n = round number)
+# Matches the original hand-tuned values closely and grows to infinity:
+#   R1=40  R2=76  R3=130  R4=202  R5=292  R6=400  R7=526  R8=670 …
 # ---------------------------------------------------------------------------
-const ROUND_REQUIREMENTS: Array = [40, 80, 130, 200, 280, 400]
 
 # ---------------------------------------------------------------------------
 # Game state
@@ -166,8 +168,8 @@ func _on_scoreboard_continue() -> void:
 		_title_screen.configure(true)
 
 func _round_requirement(round_num: int) -> int:
-	var idx := clampi(round_num - 1, 0, ROUND_REQUIREMENTS.size() - 1)
-	return ROUND_REQUIREMENTS[idx]
+	var n := float(round_num)
+	return roundi(9.0 * n * n + 9.0 * n + 22.0)
 
 # ---------------------------------------------------------------------------
 # Cinematic camera zoom
@@ -184,25 +186,36 @@ func _do_cinematic_zoom(on_done: Callable) -> void:
 		on_done.call()
 		return
 
-	# Target: slightly in front of and above the cat's head
-	var cat_pos: Vector3 = _player_node.global_position
-	var zoom_target := cat_pos + Vector3(0.0, 3.0, -6.0)
-	var zoom_look   := cat_pos + Vector3(0.0, 1.5,  0.0)
-
-	_cinematic_cam.global_position = _cinematic_cam.global_position if _cinematic_cam.get_parent() != null else zoom_target + Vector3(0, 10, 10)
 	_cinematic_cam.current = true
 	if _gameplay_cam != null:
 		_gameplay_cam.current = false
 
+	# Snapshot cat position once — clamp y so the orbit stays above the table
+	# even if the cat is mid-fall when the round ends.
+	var cat_pos: Vector3 = _player_node.global_position
+	cat_pos.y = maxf(cat_pos.y, 0.0)
+	var look_target      := cat_pos + Vector3(0.0, 1.2, 0.0)
+
+	# Orbit 180° around the cat: start behind (+Z) and sweep to front (-Z),
+	# descending from a wide radius to a close one.
+	# angle = 0 → behind (cat_pos + (0, h, r)), angle = PI → front (cat_pos + (0, h, -r))
+	var start_radius := 22.0
+	var end_radius   :=  7.0
+	var start_height := 12.0
+	var end_height   :=  3.5
+
 	var tw := create_tween()
 	tw.tween_method(
 		func(t: float) -> void:
-			var start := cat_pos + Vector3(0.0, 14.0, 18.0)
-			var pos   := start.lerp(zoom_target, t)
-			_cinematic_cam.global_position = pos
-			_cinematic_cam.look_at(zoom_look, Vector3.UP),
-		0.0, 1.0, 1.2
-	).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+			var angle  : float = t * PI
+			var radius : float = lerp(start_radius, end_radius, t)
+			var height : float = lerp(start_height, end_height, t)
+			var offset := Vector3(sin(angle) * radius, height, cos(angle) * radius)
+			_cinematic_cam.global_position = cat_pos + offset
+			if _cinematic_cam.global_position.distance_to(look_target) > 0.1:
+				_cinematic_cam.look_at(look_target, Vector3.UP),
+		0.0, 1.0, 2.0
+	).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
 	tw.tween_callback(on_done)
 
 # ---------------------------------------------------------------------------
@@ -533,6 +546,9 @@ func _spawn_player() -> Node:
 	var player = PlayerScript.new()
 	player.name = "Player"
 	player.position = Vector3(0, 2, 0)
+	# PAUSABLE so player controls freeze whenever get_tree().paused = true.
+	# (main.gd is PROCESS_MODE_ALWAYS for tweens; children inherit that unless overridden.)
+	player.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(player)
 	# Player's _ready runs synchronously during add_child; camera exists now
 	_gameplay_cam = _find_camera(player)

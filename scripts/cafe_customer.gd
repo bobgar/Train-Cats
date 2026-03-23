@@ -16,7 +16,7 @@ const RISE_SPEED := 4.5    # units/sec — ~1.8s over 8-unit travel
 const SINK_SPEED := 3.5
 const WATCH_TIME := 20.0
 const CONE_COS      := 0.5    # cos(60°) — half-angle of view cone
-const VIEW_DISTANCE := 70.0   # max XZ distance to detect a derail
+const VIEW_DISTANCE := 110.0  # max XZ distance to detect a derail (table diagonal ≈96)
 
 var _state: State = State.RISING
 var _watch_timer: float = 0.0
@@ -215,18 +215,40 @@ func is_in_view_cone(world_pos: Vector3) -> bool:
 	if to_xz.normalized().dot(face_2d) <= CONE_COS:
 		return false
 
-	# Line-of-sight: ray from head to event, blocked by layer 1 (walls/table)
-	return _los_clear(_head_pivot.global_position, world_pos)
+	# Line-of-sight: 5 rays from face points to event, blocked by layer 1 (walls/table)
+	return _los_clear(world_pos)
 
-func _los_clear(from: Vector3, to: Vector3) -> bool:
+## Cast 5 rays from different points on the face toward the target.
+## Returns true (line-of-sight clear) if ANY ray reaches the target unobstructed.
+## Origins: centre of head + four face offsets (±right, ±up) ~2 units apart.
+## This greatly reduces false negatives when a small obstruction clips just one ray.
+func _los_clear(to: Vector3) -> bool:
 	if not is_inside_tree():
 		return true
 	var space_state := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collision_mask = 1
+	var excl: Array = []
 	if _player_ref != null and is_instance_valid(_player_ref):
-		query.exclude = [_player_ref.get_rid()]
-	return space_state.intersect_ray(query).is_empty()
+		excl = [_player_ref.get_rid()]
+
+	# Head pivot only rotates on Y so basis.x = world-right of face, basis.y = up
+	var centre : Vector3 = _head_pivot.global_position
+	var right  : Vector3 = _head_pivot.global_transform.basis.x * 2.0
+	var up     : Vector3 = Vector3.UP * 2.0
+
+	var origins: Array = [
+		centre,
+		centre + right,
+		centre - right,
+		centre + up,
+		centre - up,
+	]
+	for origin: Vector3 in origins:
+		var query := PhysicsRayQueryParameters3D.create(origin, to)
+		query.collision_mask = 1
+		query.exclude        = excl
+		if space_state.intersect_ray(query).is_empty():
+			return true   # at least one ray has clear sight
+	return false          # all five rays were blocked
 
 func trigger_happy() -> void:
 	# Only react when fully up and watching — not while still rising or leaving

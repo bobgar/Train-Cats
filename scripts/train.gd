@@ -181,7 +181,9 @@ func _swipe_derail(swipe_dir: Vector3, force: float) -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
-	derailed.emit(global_position, true)   # player-caused
+	# Use the locomotive car's world position (Train node itself stays at origin)
+	var emit_pos: Vector3 = _cars[0].global_position if _cars.size() > 0 else global_position
+	derailed.emit(emit_pos, true)   # player-caused
 	var base_vel := swipe_dir * force * 0.5 + _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5
@@ -206,7 +208,8 @@ func _derail() -> void:
 	if _state == State.DERAILED:
 		return
 	_state = State.DERAILED
-	derailed.emit(global_position, false)   # train-vs-train collision
+	var emit_pos: Vector3 = _cars[0].global_position if _cars.size() > 0 else global_position
+	derailed.emit(emit_pos, false)   # train-vs-train collision
 	var vel := _heading_dir() * _current_speed
 	_current_speed = 0.0
 	_respawn_timer = 5.5
@@ -486,16 +489,41 @@ func _arrive() -> void:
 	_stop_timer = randf_range(2.5, 5.5)
 
 func _respawn() -> void:
+	var parent := get_parent()
+
+	# Pick a station not currently occupied by another living train.
+	# Shuffle candidates so we don't always prefer the same station.
+	var candidates: Array = _station_nodes.duplicate()
+	candidates.shuffle()
+	var chosen: Vector2i = candidates[0]   # fallback if all are busy
+	for s_var in candidates:
+		var s: Vector2i = s_var
+		if not _is_station_occupied(_gen.nodes[s], parent):
+			chosen = s
+			break
+
 	var new_train = get_script().new()
 	new_train.max_speed    = max_speed
 	new_train.acceleration = acceleration
 	new_train.deceleration = deceleration
-	var parent := get_parent()
 	parent.add_child(new_train)
-	new_train.call("setup", _gen, _station_nodes,
-		_station_nodes[randi() % _station_nodes.size()], _color, _num_cars)
+	new_train.call("setup", _gen, _station_nodes, chosen, _color, _num_cars)
 	# Re-register with CustomerManager so the new train's derailed signal is tracked
 	var mgr := parent.get_node_or_null("CustomerManager")
 	if mgr != null:
 		mgr.call("register_train", new_train)
 	queue_free()
+
+## Returns true if any living train has a car within 6 units of station_pos.
+func _is_station_occupied(station_pos: Vector3, parent: Node) -> bool:
+	for child in parent.get_children():
+		# Duck-type check — avoid class_name resolution issues
+		if not child.has_method("is_derailed"):
+			continue
+		if child == self or child.call("is_derailed"):
+			continue
+		var cars: Array = child.get("_cars") if child.get("_cars") != null else []
+		for car in cars:
+			if is_instance_valid(car) and car.global_position.distance_to(station_pos) < 6.0:
+				return true
+	return false

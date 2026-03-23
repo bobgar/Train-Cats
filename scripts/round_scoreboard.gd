@@ -59,7 +59,7 @@ func _build_ui() -> void:
 	_impressed_label = _panel_label("Impressed: 0",   Vector2(280, 185), 24, Color(0.70, 1.0, 0.70), true)
 	_hit_label      = _panel_label("Hit by debris: 0",Vector2(280, 220), 24, Color(1.0, 0.70, 0.40), true)
 	_result_label   = _panel_label("PASSED",          Vector2(280, 290), 40, Color(0.30, 1.0, 0.40), true)
-	_hint_label     = _panel_label("Press any key to continue", Vector2(280, 348), 20, Color(0.75, 0.75, 0.75), true)
+	_hint_label     = _panel_label("Press Space to continue", Vector2(280, 348), 20, Color(0.75, 0.75, 0.75), true)
 
 func _panel_label(txt: String, pos: Vector2, fsize: int, col: Color, centred: bool) -> Label:
 	var lbl := Label.new()
@@ -113,8 +113,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not _ready_for_input:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
-		visible = false
-		continue_pressed.emit()
-	elif event is InputEventMouseButton and event.pressed:
-		visible = false
-		continue_pressed.emit()
+		if event.keycode == KEY_SPACE:
+			visible = false
+			continue_pressed.emit()
