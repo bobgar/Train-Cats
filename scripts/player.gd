@@ -182,9 +182,9 @@ func _physics_process(delta: float) -> void:
 
 	# Read WASD input
 	var ix := float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) \
-	        - float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
+			- float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
 	var iy := float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) \
-	        - float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
+			- float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
 	var sprint := Input.is_key_pressed(KEY_SHIFT)
 	var spd    := SPRINT_SPEED if sprint else WALK_SPEED
 	var moving := ix != 0.0 or iy != 0.0
