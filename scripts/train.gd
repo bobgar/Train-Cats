@@ -81,20 +81,20 @@ func _build_visuals(num_cars: int, color: Color) -> void:
 
 func _build_car(car: Node3D, car_len: float, color: Color, is_loco: bool) -> void:
 	var body_color := color.darkened(0.18) if is_loco else color
-	_mi_box(car, Vector3(car_len - 0.1, 0.88, 1.46), body_color, Vector3(0, 1.02, 0))
+	MeshBuilder.colored_box(car, Vector3(car_len - 0.1, 0.88, 1.46), body_color, Vector3(0, 1.02, 0))
 	if is_loco:
-		_mi_box(car, Vector3(car_len * 0.45, 0.46, 1.46), body_color.darkened(0.12),
+		MeshBuilder.colored_box(car, Vector3(car_len * 0.45, 0.46, 1.46), body_color.darkened(0.12),
 			Vector3(car_len * 0.22, 1.69, 0))
-		_mi_box(car, Vector3(0.18, 0.48, 0.18), Color(0.15, 0.15, 0.15),
+		MeshBuilder.colored_box(car, Vector3(0.18, 0.48, 0.18), Color(0.15, 0.15, 0.15),
 			Vector3(-car_len * 0.30, 1.90, 0))
-		_mi_box(car, Vector3(0.28, 0.22, 0.12), Color(1.0, 0.95, 0.70),
+		MeshBuilder.colored_box(car, Vector3(0.28, 0.22, 0.12), Color(1.0, 0.95, 0.70),
 			Vector3(car_len * 0.5 - 0.06, 1.04, 0))
 	else:
-		_mi_box(car, Vector3(car_len - 0.55, 0.28, 0.06), Color(0.76, 0.88, 0.96),
+		MeshBuilder.colored_box(car, Vector3(car_len - 0.55, 0.28, 0.06), Color(0.76, 0.88, 0.96),
 			Vector3(0, 1.28, 0.76))
-		_mi_box(car, Vector3(car_len - 0.55, 0.28, 0.06), Color(0.76, 0.88, 0.96),
+		MeshBuilder.colored_box(car, Vector3(car_len - 0.55, 0.28, 0.06), Color(0.76, 0.88, 0.96),
 			Vector3(0, 1.28, -0.76))
-	_mi_box(car, Vector3(car_len - 0.15, 0.18, 1.22), Color(0.14, 0.14, 0.16),
+	MeshBuilder.colored_box(car, Vector3(car_len - 0.15, 0.18, 1.22), Color(0.14, 0.14, 0.16),
 		Vector3(0, 0.50, 0))
 	for wx in [car_len * 0.28, -car_len * 0.28]:
 		for wz in [0.70, -0.70]:
@@ -102,8 +102,8 @@ func _build_car(car: Node3D, car_len: float, color: Color, is_loco: bool) -> voi
 
 func _attach_car_area(car: Node3D, car_len: float) -> void:
 	var area := Area3D.new()
-	area.collision_layer = 2
-	area.collision_mask = 2
+	area.collision_layer = GameConstants.LAYER_TRAIN
+	area.collision_mask = GameConstants.LAYER_TRAIN
 	area.monitoring = true
 	area.monitorable = true
 	area.set_meta("owning_train", self)
@@ -116,17 +116,6 @@ func _attach_car_area(car: Node3D, car_len: float) -> void:
 	area.area_entered.connect(_on_car_area_entered)
 	car.add_child(area)
 	_car_areas.append(area)
-
-func _mi_box(parent: Node3D, size: Vector3, color: Color, pos: Vector3) -> void:
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	mi.position = pos
-	parent.add_child(mi)
 
 func _mi_cyl(parent: Node3D, radius: float, height: float, color: Color, pos: Vector3) -> void:
 	var mi := MeshInstance3D.new()
@@ -154,7 +143,7 @@ func _is_path_blocked() -> bool:
 	var excl: Array = []
 	for area in _car_areas:
 		excl.append((area as Area3D).get_rid())
-	var params := PhysicsRayQueryParameters3D.create(origin, target, 2, excl)
+	var params := PhysicsRayQueryParameters3D.create(origin, target, GameConstants.LAYER_TRAIN, excl)
 	params.collide_with_areas = true
 	params.collide_with_bodies = false
 	var result: Dictionary = get_world_3d().direct_space_state.intersect_ray(params)
@@ -232,8 +221,8 @@ func _spawn_physics_car(car: Node3D, launch_vel: Vector3) -> void:
 	var rb := RigidBody3D.new()
 	rb.global_transform = car.global_transform
 	rb.mass = 1.5
-	rb.collision_layer = 9   # layer 1 (world) + layer 8 (customer hit detection)
-	rb.collision_mask  = 1   # collide with world floor/table
+	rb.collision_layer = GameConstants.LAYER_WORLD | GameConstants.LAYER_DEBRIS   # world + debris
+	rb.collision_mask  = GameConstants.LAYER_WORLD   # collide with world floor/table
 	# Copy every MeshInstance3D from the original car so it keeps its look.
 	# Build a list of the new materials so we can fade them all together.
 	var fade_mats: Array = []

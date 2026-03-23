@@ -29,43 +29,20 @@ func _build_ui() -> void:
 	add_child(_root)
 
 	# Score — top-left
-	_score_label  = _a_lbl("Score: 0",  0.01, 0.35, 0.01, 0.09, 28,
-		Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	_score_label  = UIBuilder.anchor_label(_root, GameConstants.SCORE_LABEL % 0,
+		0.01, 0.35, 0.01, 0.09, 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 
 	# Timer — top-centre (larger font)
-	_timer_label  = _a_lbl("1:00",      0.35, 0.65, 0.01, 0.09, 36,
-		Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_timer_label  = UIBuilder.anchor_label(_root, "1:00",
+		0.35, 0.65, 0.01, 0.09, 36, Color.WHITE)
 
 	# Round number — top-right first line
-	_round_label  = _a_lbl("Round 1",   0.65, 0.99, 0.01, 0.07, 24,
-		Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT)
+	_round_label  = UIBuilder.anchor_label(_root, GameConstants.ROUND_LABEL % 1,
+		0.65, 0.99, 0.01, 0.07, 24, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT)
 
 	# Points needed — top-right second line
-	_needed_label = _a_lbl("Need: 40",  0.65, 0.99, 0.07, 0.13, 20,
-		Color(1.0, 1.0, 0.55), HORIZONTAL_ALIGNMENT_RIGHT)
-
-func _a_lbl(text: String, al: float, ar: float, at: float, ab: float,
-		fsize: int, col: Color, halign: HorizontalAlignment) -> Label:
-	var lbl := Label.new()
-	lbl.text                 = text
-	lbl.anchor_left          = al
-	lbl.anchor_right         = ar
-	lbl.anchor_top           = at
-	lbl.anchor_bottom        = ab
-	lbl.offset_left          = 0
-	lbl.offset_right         = 0
-	lbl.offset_top           = 0
-	lbl.offset_bottom        = 0
-	lbl.horizontal_alignment = halign
-	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
-	var s := LabelSettings.new()
-	s.font_size     = fsize
-	s.font_color    = col
-	s.outline_size  = 3
-	s.outline_color = Color(0.0, 0.0, 0.0, 0.9)
-	lbl.label_settings = s
-	_root.add_child(lbl)
-	return lbl
+	_needed_label = UIBuilder.anchor_label(_root, GameConstants.NEED_LABEL % 40,
+		0.65, 0.99, 0.07, 0.13, 20, Color(1.0, 1.0, 0.55), HORIZONTAL_ALIGNMENT_RIGHT)
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -75,9 +52,9 @@ func start_round(round_num: int, required: int) -> void:
 	_time_left             = ROUND_DURATION
 	_active                = true
 	visible                = true
-	_round_label.text      = "Round %d" % round_num
-	_needed_label.text     = "Need: %d pts" % required
-	_score_label.text      = "Score: 0"
+	_round_label.text      = GameConstants.ROUND_LABEL % round_num
+	_needed_label.text     = GameConstants.NEED_LABEL % required
+	_score_label.text      = GameConstants.SCORE_LABEL % 0
 	_update_timer_label()
 
 func stop() -> void:
@@ -85,7 +62,7 @@ func stop() -> void:
 	visible  = false
 
 func update_score(new_score: int) -> void:
-	_score_label.text = "Score: %d" % new_score
+	_score_label.text = GameConstants.SCORE_LABEL % new_score
 
 # ---------------------------------------------------------------------------
 # Per-frame

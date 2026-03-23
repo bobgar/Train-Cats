@@ -7,10 +7,8 @@ class_name CustomerManager
 
 const CafeCustomerScript = preload("res://scripts/cafe_customer.gd")
 
-const MAX_ACTIVE      := 5
-const RESPAWN_DELAY   := 5.0
-const PTS_CONE_DERAIL := 10   # points when watched train is knocked over
-const PTS_HIT_DEBRIS  := 25   # points when hit by flying train debris
+const MAX_ACTIVE    := 5
+const RESPAWN_DELAY := 5.0
 
 # Customer y-position when hidden (must match CafeCustomer.HIDE_Y)
 const _HIDE_Y := -8.0
@@ -133,15 +131,15 @@ func _spawn_one() -> void:
 		customer.call("setup", _player, face)
 		customer.done.connect(_on_customer_done.bind(customer))
 		_customers.append(customer)
-		_track_hit_score(customer)
+		_connect_hit_scored_signal(customer)
 		return
 	# All 20 attempts overlapped — silently skip; next respawn timer will retry
 
 ## Connect to the customer's hit_scored signal so we award PTS_HIT_DEBRIS exactly once.
-func _track_hit_score(customer: Node) -> void:
+func _connect_hit_scored_signal(customer: Node) -> void:
 	customer.connect("hit_scored", func() -> void:
 		hit_count += 1
-		_add_score(PTS_HIT_DEBRIS))
+		_add_score(GameConstants.PTS_HIT_DEBRIS))
 
 # ---------------------------------------------------------------------------
 # Event handlers
@@ -154,10 +152,10 @@ func _on_train_derailed(world_pos: Vector3, by_player: bool) -> void:
 	for c in _customers:
 		if not is_instance_valid(c):
 			continue
-		if c.call("is_in_view_cone", world_pos):
+		if c.call("can_see_position", world_pos):
 			c.call("trigger_happy")
 			impressed_count += 1
-			_add_score(PTS_CONE_DERAIL)
+			_add_score(GameConstants.PTS_CONE_DERAIL)
 
 func _on_customer_done(customer: Node) -> void:
 	_customers.erase(customer)

@@ -1,0 +1,20 @@
+keys,en
+SCORE_LABEL,"Score: %d"
+ROUND_LABEL,"Round %d"
+NEED_LABEL,"Need: %d pts"
+ROUND_COMPLETE,"Round %d Complete!"
+ROUND_FAILED,"Round %d Failed"
+REQUIRED_LABEL,"Required: %d"
+IMPRESSED_LABEL,"Customers impressed: %d"
+HIT_LABEL,"Customers hit by debris: %d"
+RESULT_PASSED,PASSED!
+RESULT_FAILED,FAILED
+PRESS_SPACE_CONTINUE,Press Space to continue
+GAME_OVER,GAME OVER
+CREDITS_LABEL,by Kevin Kohler
+CONTROLS_LABEL,"Controls:\n  WASD / Arrow keys — Move     Shift — Run\n  Space — Jump     E or Click — Swipe     Mouse — Look around"
+PRESS_SPACE_PLAY,Press Space to play
+PAUSED,PAUSED
+PAUSE_RETURN_TITLE,Return to title screen?
+PAUSE_QUIT,Space — Quit to Title
+PAUSE_RESUME,Escape — Resume

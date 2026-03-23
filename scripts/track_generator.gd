@@ -364,11 +364,10 @@ func _spawn_curved_segment(points: Array) -> void:
 		var yaw: float      = atan2(-dir.z, dir.x)
 		var perp: Vector3   = Vector3(-dir.z, 0.0, dir.x)
 		# Ballast strip
-		var ballast := _make_mesh_instance(
-			Vector3(seg_len + 0.02, 0.06, 1.6), Color(0.55, 0.50, 0.44))
-		ballast.position  = center + Vector3.UP * 0.02
+		var ballast := MeshBuilder.colored_box(self,
+			Vector3(seg_len + 0.02, 0.06, 1.6), Color(0.55, 0.50, 0.44),
+			center + Vector3.UP * 0.02)
 		ballast.rotation.y = yaw
-		add_child(ballast)
 		# Two rails
 		for side in [-0.58, 0.58]:
 			var rail := _make_static_box(
@@ -408,19 +407,9 @@ func get_outward_dir(gpos: Vector2i) -> Vector3:
 		return Vector3(0, 0, -1)
 	return Vector3(0, 0, 1)
 
-func _make_mesh_instance(size: Vector3, color: Color) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	return mi
-
 func _make_static_box(size: Vector3, mat: StandardMaterial3D) -> StaticBody3D:
 	var body := StaticBody3D.new()
-	body.collision_layer = 4   # separate layer so the player (mask=1) walks over rails
+	body.collision_layer = GameConstants.LAYER_TRACK   # separate layer so the player (mask=1) walks over rails
 	body.collision_mask  = 0
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()

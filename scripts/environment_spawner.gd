@@ -123,25 +123,21 @@ func _bldg_industrial(root: Node3D, w: float, h: float, l: float) -> void:
 		_rng.randf_range(0.50, 0.62),
 		_rng.randf_range(0.48, 0.60))
 	# Main body (collision + mesh)
-	_sb(root, Vector3(w, h, l), bc).position = Vector3(0, h * 0.5, 0)
+	MeshBuilder.static_colored_box(root, Vector3(w, h, l), bc, Vector3(0, h * 0.5, 0))
 	# Dark base band
-	_mi(root, Vector3(w + 0.08, 0.38, l + 0.08), bc.darkened(0.28)).position = Vector3(0, 0.19, 0)
+	MeshBuilder.colored_box(root, Vector3(w + 0.08, 0.38, l + 0.08), bc.darkened(0.28), Vector3(0, 0.19, 0))
 	# Flat eave overhang
-	_mi(root, Vector3(w + 0.55, 0.24, l + 0.55), bc.darkened(0.18)).position = Vector3(0, h + 0.12, 0)
+	MeshBuilder.colored_box(root, Vector3(w + 0.55, 0.24, l + 0.55), bc.darkened(0.18), Vector3(0, h + 0.12, 0))
 	# Peaked ridge — square cross-section box rotated 45° along its length
 	var rs := h * 0.22
-	var ridge := _mi(root, Vector3(l + 0.28, rs * 1.42, rs * 1.42), bc.lightened(0.06))
-	ridge.position = Vector3(0, h + rs, 0)
+	var ridge := MeshBuilder.colored_box(root, Vector3(l + 0.28, rs * 1.42, rs * 1.42), bc.lightened(0.06), Vector3(0, h + rs, 0))
 	ridge.rotation_degrees.x = 45.0
 	# Chimney / vent (50% chance)
 	if _rng.randf() > 0.50:
-		var ch := _mi(root, Vector3(0.46, _rng.randf_range(0.8, 1.5), 0.46), bc.darkened(0.38))
-		ch.position = Vector3(
-			_rng.randf_range(-w * 0.28, w * 0.28), h + 0.55,
-			_rng.randf_range(-l * 0.28, l * 0.28))
+		MeshBuilder.colored_box(root, Vector3(0.46, _rng.randf_range(0.8, 1.5), 0.46), bc.darkened(0.38),
+			Vector3(_rng.randf_range(-w * 0.28, w * 0.28), h + 0.55, _rng.randf_range(-l * 0.28, l * 0.28)))
 	# Dock door on one long face
-	var door := _mi(root, Vector3(w * 0.28, h * 0.48, 0.10), bc.darkened(0.50))
-	door.position = Vector3(0, h * 0.24, l * 0.5 + 0.05)
+	MeshBuilder.colored_box(root, Vector3(w * 0.28, h * 0.48, 0.10), bc.darkened(0.50), Vector3(0, h * 0.24, l * 0.5 + 0.05))
 
 ## Style 1 — Brick Block / Apartment
 ## Taller footprint with horizontal window rows on all four sides.
@@ -152,9 +148,9 @@ func _bldg_brick(root: Node3D, w: float, h: float, l: float) -> void:
 		bc = Color(_rng.randf_range(0.50, 0.62), _rng.randf_range(0.26, 0.38), _rng.randf_range(0.18, 0.28))
 	else:
 		bc = Color(_rng.randf_range(0.40, 0.54), _rng.randf_range(0.38, 0.50), _rng.randf_range(0.40, 0.52))
-	_sb(root, Vector3(w, h, l), bc).position = Vector3(0, h * 0.5, 0)
+	MeshBuilder.static_colored_box(root, Vector3(w, h, l), bc, Vector3(0, h * 0.5, 0))
 	# Roof parapet
-	_mi(root, Vector3(w + 0.24, 0.50, l + 0.24), bc.darkened(0.22)).position = Vector3(0, h + 0.25, 0)
+	MeshBuilder.colored_box(root, Vector3(w + 0.24, 0.50, l + 0.24), bc.darkened(0.22), Vector3(0, h + 0.25, 0))
 	# Horizontal window bands, one per floor
 	var floors := maxi(1, int(h / 2.8))
 	for f in range(floors):
@@ -168,36 +164,35 @@ func _bldg_brick(root: Node3D, w: float, h: float, l: float) -> void:
 		var wh := 0.44
 		# Front and back glass strips
 		for side in [-1.0, 1.0]:
-			_mi(root, Vector3(w * 0.74, wh, 0.09), wc).position = Vector3(0, fy, side * (l * 0.5 + 0.05))
+			MeshBuilder.colored_box(root, Vector3(w * 0.74, wh, 0.09), wc, Vector3(0, fy, side * (l * 0.5 + 0.05)))
 		# Left and right glass strips
 		for side in [-1.0, 1.0]:
-			_mi(root, Vector3(0.09, wh, l * 0.70), wc).position = Vector3(side * (w * 0.5 + 0.05), fy, 0)
+			MeshBuilder.colored_box(root, Vector3(0.09, wh, l * 0.70), wc, Vector3(side * (w * 0.5 + 0.05), fy, 0))
 	# Entrance recess on front face
-	var ent := _mi(root, Vector3(w * 0.22, h * 0.22, 0.10), bc.darkened(0.55))
-	ent.position = Vector3(0, h * 0.11, l * 0.5 + 0.05)
+	MeshBuilder.colored_box(root, Vector3(w * 0.22, h * 0.22, 0.10), bc.darkened(0.55), Vector3(0, h * 0.11, l * 0.5 + 0.05))
 
 ## Style 2 — Glass Office Tower
 ## Tall, glassy, with thin horizontal floor bands and a rooftop crown.
 func _bldg_office(root: Node3D, w: float, h: float, l: float) -> void:
 	var hue := _rng.randf_range(-0.07, 0.07)
 	var bc := Color(0.28 + hue, 0.44, 0.70)
-	_sb(root, Vector3(w, h, l), bc).position = Vector3(0, h * 0.5, 0)
+	MeshBuilder.static_colored_box(root, Vector3(w, h, l), bc, Vector3(0, h * 0.5, 0))
 	# Horizontal floor bands
 	var band_c := bc.lightened(0.16)
 	var bands := maxi(2, int(h / 2.2))
 	for b_i in range(1, bands):
 		var by := float(b_i) * h / float(bands)
-		_mi(root, Vector3(w + 0.15, 0.15, l + 0.15), band_c).position = Vector3(0, by, 0)
+		MeshBuilder.colored_box(root, Vector3(w + 0.15, 0.15, l + 0.15), band_c, Vector3(0, by, 0))
 	# Setback crown
-	_mi(root, Vector3(w * 0.62, 0.52, l * 0.62), bc.lightened(0.24)).position = Vector3(0, h + 0.26, 0)
+	MeshBuilder.colored_box(root, Vector3(w * 0.62, 0.52, l * 0.62), bc.lightened(0.24), Vector3(0, h + 0.26, 0))
 	# Antenna mast on taller towers
 	if h > 10.0:
-		_mi(root, Vector3(0.11, _rng.randf_range(1.0, 1.8), 0.11),
-			bc.lightened(0.32)).position = Vector3(0, h + 0.78, 0)
+		MeshBuilder.colored_box(root, Vector3(0.11, _rng.randf_range(1.0, 1.8), 0.11),
+			bc.lightened(0.32), Vector3(0, h + 0.78, 0))
 	# Subtle corner pillars
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			_mi(root, Vector3(0.22, h, 0.22), bc.darkened(0.10)).position = Vector3(sx * w * 0.5, h * 0.5, sz * l * 0.5)
+			MeshBuilder.colored_box(root, Vector3(0.22, h, 0.22), bc.darkened(0.10), Vector3(sx * w * 0.5, h * 0.5, sz * l * 0.5))
 
 # ---------------------------------------------------------------------------
 # Tree placement
@@ -229,19 +224,19 @@ func _place_trees() -> void:
 
 ## Conifer — three stacked pyramid-shaped foliage tiers over a thin trunk.
 func _tree_conifer(node: Node3D, s: float) -> void:
-	_mi(node, Vector3(0.13 * s, 0.65 * s, 0.13 * s),
-		Color(0.28, 0.18, 0.11)).position = Vector3(0, 0.33 * s, 0)
+	MeshBuilder.colored_box(node, Vector3(0.13 * s, 0.65 * s, 0.13 * s),
+		Color(0.28, 0.18, 0.11), Vector3(0, 0.33 * s, 0))
 	var greens := [Color(0.13, 0.38, 0.15), Color(0.16, 0.46, 0.18), Color(0.19, 0.53, 0.21)]
 	var wids   := [1.28, 0.90, 0.55]
 	var base   := 0.55 * s
 	for i in range(3):
-		_mi(node, Vector3(wids[i] * s, 0.60 * s, wids[i] * s),
-			greens[i]).position = Vector3(0, base + float(i) * 0.50 * s, 0)
+		MeshBuilder.colored_box(node, Vector3(wids[i] * s, 0.60 * s, wids[i] * s),
+			greens[i], Vector3(0, base + float(i) * 0.50 * s, 0))
 
 ## Round deciduous tree — trunk plus a low-poly sphere canopy.
 func _tree_round(node: Node3D, s: float) -> void:
-	_mi(node, Vector3(0.17 * s, 0.90 * s, 0.17 * s),
-		Color(0.30, 0.20, 0.12)).position = Vector3(0, 0.45 * s, 0)
+	MeshBuilder.colored_box(node, Vector3(0.17 * s, 0.90 * s, 0.17 * s),
+		Color(0.30, 0.20, 0.12), Vector3(0, 0.45 * s, 0))
 	var mi := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.84 * s
@@ -254,43 +249,6 @@ func _tree_round(node: Node3D, s: float) -> void:
 	mi.material_override = mat
 	mi.position = Vector3(0, (0.90 + 0.70) * s, 0)   # place sphere bottom at trunk top
 	node.add_child(mi)
-
-# ---------------------------------------------------------------------------
-# Mesh helpers
-# ---------------------------------------------------------------------------
-
-## StaticBody3D box — used for the main building body (player collision on layer 1).
-func _sb(parent: Node3D, size: Vector3, color: Color) -> StaticBody3D:
-	var sb := StaticBody3D.new()
-	sb.collision_layer = 1
-	sb.collision_mask  = 0
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	sb.add_child(mi)
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = size
-	cs.shape = shape
-	sb.add_child(cs)
-	parent.add_child(sb)
-	return sb
-
-## MeshInstance3D box — used for roof, windows, and other decorative detail.
-func _mi(parent: Node3D, size: Vector3, color: Color) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	parent.add_child(mi)
-	return mi
 
 # ---------------------------------------------------------------------------
 # Tunnel placement
@@ -340,16 +298,16 @@ func _spawn_tunnel(pts: Array) -> void:
 		var perp: Vector3 = Vector3(-dir.z, 0.0, dir.x)
 		var sl: float     = seg_len + 0.04
 
-		var lw := _sb(self, Vector3(sl, _TUNNEL_WALL_H, _TUNNEL_WALL_T), wall_col)
-		lw.position  = ctr + perp * (_TUNNEL_HALF_W + _TUNNEL_WALL_T * 0.5) + Vector3.UP * (_TUNNEL_WALL_H * 0.5)
+		var lw := MeshBuilder.static_colored_box(self, Vector3(sl, _TUNNEL_WALL_H, _TUNNEL_WALL_T), wall_col,
+			ctr + perp * (_TUNNEL_HALF_W + _TUNNEL_WALL_T * 0.5) + Vector3.UP * (_TUNNEL_WALL_H * 0.5))
 		lw.rotation.y = yaw
 
-		var rw := _sb(self, Vector3(sl, _TUNNEL_WALL_H, _TUNNEL_WALL_T), wall_col)
-		rw.position  = ctr - perp * (_TUNNEL_HALF_W + _TUNNEL_WALL_T * 0.5) + Vector3.UP * (_TUNNEL_WALL_H * 0.5)
+		var rw := MeshBuilder.static_colored_box(self, Vector3(sl, _TUNNEL_WALL_H, _TUNNEL_WALL_T), wall_col,
+			ctr - perp * (_TUNNEL_HALF_W + _TUNNEL_WALL_T * 0.5) + Vector3.UP * (_TUNNEL_WALL_H * 0.5))
 		rw.rotation.y = yaw
 
-		var ceil := _mi(self, Vector3(sl, _TUNNEL_WALL_T, outer_half * 2), wall_col)
-		ceil.position  = ctr + Vector3.UP * (_TUNNEL_WALL_H + _TUNNEL_WALL_T * 0.5)
+		var ceil := MeshBuilder.colored_box(self, Vector3(sl, _TUNNEL_WALL_T, outer_half * 2), wall_col,
+			ctr + Vector3.UP * (_TUNNEL_WALL_H + _TUNNEL_WALL_T * 0.5))
 		ceil.rotation.y = yaw
 
 	# Portal frames at entry and exit
@@ -368,13 +326,13 @@ func _spawn_tunnel(pts: Array) -> void:
 		var ph: float     = _TUNNEL_WALL_H + _TUNNEL_WALL_T + pw
 
 		# Side pillars
-		var lp := _mi(self, Vector3(pw, ph, pw), portal_col)
-		lp.position  = pt + perp * (outer_half + pw * 0.5) + Vector3.UP * (ph * 0.5)
+		var lp := MeshBuilder.colored_box(self, Vector3(pw, ph, pw), portal_col,
+			pt + perp * (outer_half + pw * 0.5) + Vector3.UP * (ph * 0.5))
 		lp.rotation.y = yaw
-		var rp := _mi(self, Vector3(pw, ph, pw), portal_col)
-		rp.position  = pt - perp * (outer_half + pw * 0.5) + Vector3.UP * (ph * 0.5)
+		var rp := MeshBuilder.colored_box(self, Vector3(pw, ph, pw), portal_col,
+			pt - perp * (outer_half + pw * 0.5) + Vector3.UP * (ph * 0.5))
 		rp.rotation.y = yaw
 		# Lintel across top
-		var li := _mi(self, Vector3(pw, pw, outer_half * 2 + pw * 2), portal_col)
-		li.position  = pt + Vector3.UP * (_TUNNEL_WALL_H + _TUNNEL_WALL_T + pw * 0.5)
+		var li := MeshBuilder.colored_box(self, Vector3(pw, pw, outer_half * 2 + pw * 2), portal_col,
+			pt + Vector3.UP * (_TUNNEL_WALL_H + _TUNNEL_WALL_T + pw * 0.5))
 		li.rotation.y = yaw

@@ -2,16 +2,19 @@ extends CharacterBody3D
 class_name Player
 
 ## Third-person cat controller.
-## Movement: WASD, camera-relative.  Sprint: Shift.  Jump: Space.
-## Swipe: Left-click or E (alternates left/right paw, sphere-queries for trains).
-## Camera: mouse-drag orbital; left-click re-captures mouse after Escape.
+## Movement: WASD or left stick.  Sprint: Shift, LB, or LT.  Jump: Space or A.
+## Swipe: left-click, E, X, or RB.
+## Camera: auto-follows behind cat; right stick or mouse (when captured) for manual override.
 
-const WALK_SPEED    := 8.0
-const SPRINT_SPEED  := 20.0
-const JUMP_SPEED    := 12.0
-const GRAVITY       := 26.0
-const MOUSE_SENS    := 0.26
-const CAM_DIST      := 11.0
+const WALK_SPEED       := 8.0
+const SPRINT_SPEED     := 20.0
+const JUMP_SPEED       := 12.0
+const GRAVITY          := 26.0
+const MOUSE_SENS       := 0.26
+const CAM_DIST         := 11.0
+const CTRL_DEADZONE    := 0.15
+const CTRL_SENS        := 120.0   # right-stick degrees per second
+const CAM_FOLLOW_SPEED := 4.0     # how fast camera swings behind player
 
 # Camera orbit angles (degrees)
 var _cam_yaw:   float = 0.0    # 0 = camera sits in world +Z from player
@@ -43,8 +46,8 @@ func _ready() -> void:
 	_build_camera()
 
 func _build_collision() -> void:
-	collision_layer = 1
-	collision_mask  = 1
+	collision_layer = GameConstants.LAYER_WORLD
+	collision_mask  = GameConstants.LAYER_WORLD
 	var cs  := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.42
@@ -56,7 +59,7 @@ func _build_collision() -> void:
 func _build_body_area() -> void:
 	_body_area = Area3D.new()
 	_body_area.collision_layer = 0
-	_body_area.collision_mask  = 2   # overlaps train Area3D sensors (layer 2)
+	_body_area.collision_mask  = GameConstants.LAYER_TRAIN   # overlaps train Area3D sensors (layer 2)
 	var cs  := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.48
@@ -78,31 +81,31 @@ func _build_cat() -> void:
 	var nose := Color(0.90, 0.55, 0.58)
 
 	# Body
-	_mi(_body_pivot, Vector3(0.68, 0.50, 0.88), fur,  Vector3.ZERO)
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.68, 0.50, 0.88), fur,  Vector3.ZERO)
 	# Belly (lighter strip)
-	_mi(_body_pivot, Vector3(0.28, 0.46, 0.70), crm.darkened(0.12), Vector3(0, -0.06, 0.04))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.28, 0.46, 0.70), crm.darkened(0.12), Vector3(0, -0.06, 0.04))
 
 	# Head (forward-up)
 	var hd := Vector3(0, 0.38, -0.52)
-	_mi(_body_pivot, Vector3(0.60, 0.52, 0.54), fur, hd)
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.60, 0.52, 0.54), fur, hd)
 
 	# Ears
-	_mi(_body_pivot, Vector3(0.13, 0.25, 0.10), furd, hd + Vector3(-0.17,  0.35, 0.04))
-	_mi(_body_pivot, Vector3(0.13, 0.25, 0.10), furd, hd + Vector3( 0.17,  0.35, 0.04))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.13, 0.25, 0.10), furd, hd + Vector3(-0.17,  0.35, 0.04))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.13, 0.25, 0.10), furd, hd + Vector3( 0.17,  0.35, 0.04))
 	# Eyes
-	_mi(_body_pivot, Vector3(0.11, 0.10, 0.05), eye,  hd + Vector3(-0.14,  0.06, -0.27))
-	_mi(_body_pivot, Vector3(0.11, 0.10, 0.05), eye,  hd + Vector3( 0.14,  0.06, -0.27))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.11, 0.10, 0.05), eye,  hd + Vector3(-0.14,  0.06, -0.27))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.11, 0.10, 0.05), eye,  hd + Vector3( 0.14,  0.06, -0.27))
 	# Nose
-	_mi(_body_pivot, Vector3(0.09, 0.07, 0.05), nose, hd + Vector3( 0,    -0.09, -0.28))
+	MeshBuilder.colored_box(_body_pivot, Vector3(0.09, 0.07, 0.05), nose, hd + Vector3( 0,    -0.09, -0.28))
 
 	# Tail (angled upward from rear)
-	var tail := _mi(_body_pivot, Vector3(0.12, 0.60, 0.12), fur, Vector3(0.06, 0.24, 0.52))
+	var tail := MeshBuilder.colored_box(_body_pivot, Vector3(0.12, 0.60, 0.12), fur, Vector3(0.06, 0.24, 0.52))
 	tail.rotation_degrees.x = -46.0
 
 	# Rear legs + paws
 	for sx in [-1.0, 1.0]:
-		_mi(_body_pivot, Vector3(0.19, 0.44, 0.22), furd, Vector3(sx * 0.26, -0.30,  0.30))
-		_mi(_body_pivot, Vector3(0.22, 0.10, 0.36), crm,  Vector3(sx * 0.26, -0.54,  0.40))
+		MeshBuilder.colored_box(_body_pivot, Vector3(0.19, 0.44, 0.22), furd, Vector3(sx * 0.26, -0.30,  0.30))
+		MeshBuilder.colored_box(_body_pivot, Vector3(0.22, 0.10, 0.36), crm,  Vector3(sx * 0.26, -0.54,  0.40))
 
 	# Front paws — separate Node3D for animation
 	for i in range(2):
@@ -111,8 +114,8 @@ func _build_cat() -> void:
 		var rest := Vector3(sx * 0.27, -0.31, -0.38)
 		paw.position = rest
 		_body_pivot.add_child(paw)
-		_mi(paw, Vector3(0.18, 0.40, 0.18), furd, Vector3.ZERO)               # upper leg
-		_mi(paw, Vector3(0.22, 0.10, 0.30), crm,  Vector3(0, -0.22, -0.02))   # paw tip
+		MeshBuilder.colored_box(paw, Vector3(0.18, 0.40, 0.18), furd, Vector3.ZERO)               # upper leg
+		MeshBuilder.colored_box(paw, Vector3(0.22, 0.10, 0.30), crm,  Vector3(0, -0.22, -0.02))   # paw tip
 		_paws.append(paw)
 		_paw_rest.append(rest)
 
@@ -121,18 +124,6 @@ func _build_camera() -> void:
 	_camera.fov  = 62.0
 	_camera.near = 0.15
 	add_child(_camera)
-
-func _mi(parent: Node3D, size: Vector3, color: Color, pos: Vector3) -> MeshInstance3D:
-	var mi   := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh   = mesh
-	var mat   := StandardMaterial3D.new()
-	mat.albedo_color  = color
-	mi.material_override = mat
-	mi.position = pos
-	parent.add_child(mi)
-	return mi
 
 # ---------------------------------------------------------------------------
 # Input
@@ -286,7 +277,7 @@ func _check_swipe_hit() -> void:
 	sphere.radius        = 1.7
 	query.shape          = sphere
 	query.transform      = Transform3D(Basis(), hit_pos)
-	query.collision_mask = 1
+	query.collision_mask = GameConstants.LAYER_WORLD
 	query.collide_with_areas  = false
 	query.collide_with_bodies = true
 	query.exclude = [get_rid()]

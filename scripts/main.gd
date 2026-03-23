@@ -75,7 +75,7 @@ func _ready() -> void:
 	_spawn_world_objects(gen)
 
 	_player_node      = _spawn_player()
-	_customer_manager = _spawn_customer_manager(_player_node)
+	_customer_manager = _create_customer_manager(_player_node)
 	_spawn_trains(gen, station_gpos, _customer_manager)
 	_spawn_cinematic_cam()
 
@@ -101,7 +101,7 @@ func _ready() -> void:
 	get_tree().paused = true
 	_title_screen.configure(false)
 
-func _spawn_world_objects(gen) -> void:
+func _spawn_world_objects(gen: TrackGenerator) -> void:
 	var env := EnvironmentSpawnerScript.new()
 	env.name = "EnvironmentSpawner"
 	add_child(env)
@@ -117,7 +117,7 @@ func _on_title_continue() -> void:
 func _start_round() -> void:
 	_game_state = GameState.PLAYING
 	_customer_manager.call("reset_round")
-	var req := _round_requirement(_current_round)
+	var req := GameConstants.round_requirement(_current_round)
 	_hud.start_round(_current_round, req)
 	get_tree().paused = false
 	# Make sure gameplay camera is active
@@ -138,11 +138,11 @@ func _end_round() -> void:
 
 	var stats: Dictionary = _customer_manager.call("get_stats")
 	var score: int   = stats.get("score", 0)
-	var req: int     = _round_requirement(_current_round)
+	var req: int     = GameConstants.round_requirement(_current_round)
 	var passed: bool = score >= req
 
 	# Cinematic zoom — tween camera toward cat's face then show scoreboard
-	_do_cinematic_zoom(func() -> void:
+	_play_round_end_cinematic(func() -> void:
 		_round_scoreboard.show_result(
 			score, req,
 			stats.get("impressed", 0), stats.get("hit", 0),
@@ -151,7 +151,7 @@ func _end_round() -> void:
 func _on_scoreboard_continue() -> void:
 	var stats: Dictionary = _customer_manager.call("get_stats")
 	var score: int   = stats.get("score", 0)
-	var req: int     = _round_requirement(_current_round)
+	var req: int     = GameConstants.round_requirement(_current_round)
 	var passed: bool = score >= req
 
 	# Restore gameplay camera
@@ -170,11 +170,6 @@ func _on_scoreboard_continue() -> void:
 		_hud.call("stop")
 		_title_screen.configure(true)
 
-func _round_requirement(round_num: int) -> int:
-	var n   := float(round_num)
-	var raw := 9.0 * n * n + 9.0 * n + 22.0
-	return int(round(raw / 10.0)) * 10   # round to nearest 10
-
 # ---------------------------------------------------------------------------
 # Cinematic camera zoom
 # ---------------------------------------------------------------------------
@@ -185,7 +180,7 @@ func _spawn_cinematic_cam() -> void:
 	_cinematic_cam.current  = false
 	add_child(_cinematic_cam)
 
-func _do_cinematic_zoom(on_done: Callable) -> void:
+func _play_round_end_cinematic(on_done: Callable) -> void:
 	if _player_node == null or not is_instance_valid(_player_node):
 		on_done.call()
 		return
@@ -485,37 +480,10 @@ func _add_ceiling() -> void:
 # ---------------------------------------------------------------------------
 
 func _solid_box(size: Vector3, color: Color, pos: Vector3) -> StaticBody3D:
-	var sb    := StaticBody3D.new()
-	sb.collision_layer = 1
-	sb.collision_mask  = 0
-	var mi    := MeshInstance3D.new()
-	var mesh  := BoxMesh.new()
-	mesh.size  = size
-	mi.mesh    = mesh
-	var mat    := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	sb.add_child(mi)
-	var cs    := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = size
-	cs.shape   = shape
-	sb.add_child(cs)
-	sb.position = pos
-	add_child(sb)
-	return sb
+	return MeshBuilder.static_colored_box(self, size, color, pos)
 
 func _mi_box(size: Vector3, color: Color, pos: Vector3) -> MeshInstance3D:
-	var mi   := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh   = mesh
-	var mat   := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
-	mi.position = pos
-	add_child(mi)
-	return mi
+	return MeshBuilder.colored_box(self, size, color, pos)
 
 # ---------------------------------------------------------------------------
 # Track — smaller 8×8 grid so the table is compact relative to the room
@@ -532,7 +500,7 @@ func _add_tracks():
 	add_child(gen)
 	return gen
 
-func _spawn_stations(gen) -> Array:
+func _spawn_stations(gen: TrackGenerator) -> Array:
 	var boundary: Array = gen.get_boundary_nodes(10)
 	var station_gpos: Array = []
 	for gpos_var in boundary:
@@ -567,7 +535,7 @@ func _find_camera(node: Node) -> Camera3D:
 			return result
 	return null
 
-func _spawn_customer_manager(player: Node) -> Node:
+func _create_customer_manager(player: Node) -> Node:
 	var mgr = CustomerManagerScript.new()
 	mgr.name = "CustomerManager"
 	add_child(mgr)
@@ -575,7 +543,7 @@ func _spawn_customer_manager(player: Node) -> Node:
 	# Connect timer's time_up after HUD is created (done in _ready after this call)
 	return mgr
 
-func _spawn_trains(gen, stations: Array, manager: Node) -> void:
+func _spawn_trains(gen: TrackGenerator, stations: Array, manager: Node) -> void:
 	if stations.size() < 2:
 		return
 	var num_trains: int = mini(7, stations.size())
@@ -626,30 +594,16 @@ func _create_pause_menu() -> void:
 	panel.offset_top  = 0;     panel.offset_bottom = 0
 	root.add_child(panel)
 
-	_pause_lbl(root, "PAUSED",                0.25, 0.75, 0.30, 0.43, 44, Color.WHITE)
-	_pause_lbl(root, "Return to title screen?",0.25, 0.75, 0.45, 0.54, 26, Color(0.90, 0.90, 0.90))
-	_pause_lbl(root, "Space — Quit to Title", 0.25, 0.75, 0.57, 0.65, 22, Color(1.0, 1.0, 0.50))
-	_pause_lbl(root, "Escape — Resume",       0.25, 0.75, 0.65, 0.73, 22, Color(0.75, 0.75, 0.75))
+	_pause_lbl(root, GameConstants.PAUSED,             0.25, 0.75, 0.30, 0.43, 44, Color.WHITE)
+	_pause_lbl(root, GameConstants.PAUSE_RETURN_TITLE, 0.25, 0.75, 0.45, 0.54, 26, Color(0.90, 0.90, 0.90))
+	_pause_lbl(root, GameConstants.PAUSE_QUIT,         0.25, 0.75, 0.57, 0.65, 22, Color(1.0, 1.0, 0.50))
+	_pause_lbl(root, GameConstants.PAUSE_RESUME,       0.25, 0.75, 0.65, 0.73, 22, Color(0.75, 0.75, 0.75))
 
 	add_child(_pause_overlay)
 
 func _pause_lbl(root: Control, text: String, al: float, ar: float,
 		at: float, ab: float, fsize: int, col: Color) -> void:
-	var lbl := Label.new()
-	lbl.text                 = text
-	lbl.anchor_left          = al;  lbl.anchor_right  = ar
-	lbl.anchor_top           = at;  lbl.anchor_bottom = ab
-	lbl.offset_left          = 0;   lbl.offset_right  = 0
-	lbl.offset_top           = 0;   lbl.offset_bottom = 0
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
-	var s := LabelSettings.new()
-	s.font_size     = fsize
-	s.font_color    = col
-	s.outline_size  = 2
-	s.outline_color = Color(0, 0, 0, 0.9)
-	lbl.label_settings = s
-	root.add_child(lbl)
+	UIBuilder.anchor_label(root, text, al, ar, at, ab, fsize, col)
 
 func _show_pause_menu() -> void:
 	get_tree().paused      = true

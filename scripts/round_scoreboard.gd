@@ -36,50 +36,27 @@ func _build_ui() -> void:
 	_root.add_child(bg)
 
 	# Dark panel box
-	_a_rect(Color(0.12, 0.10, 0.08, 0.96), 0.12, 0.88, 0.08, 0.93)
+	UIBuilder.anchor_rect(_root, Color(0.12, 0.10, 0.08, 0.96), 0.12, 0.88, 0.08, 0.93)
 
 	# Gold accent strips (top and bottom of panel)
-	_a_rect(Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.08, 0.095)
-	_a_rect(Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.915, 0.93)
+	UIBuilder.anchor_rect(_root, Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.08, 0.095)
+	UIBuilder.anchor_rect(_root, Color(0.80, 0.70, 0.30, 1.0),  0.12, 0.88, 0.915, 0.93)
 
 	# Content labels — all horizontally centred inside the panel column
-	_title_label     = _a_lbl("Round Complete!",       0.12, 0.88, 0.10, 0.21, 36, Color(1.0, 0.90, 0.30))
-	_score_label     = _a_lbl("Score: 0",              0.12, 0.88, 0.23, 0.33, 30, Color.WHITE)
-	_req_label       = _a_lbl("Required: 0",           0.12, 0.88, 0.34, 0.42, 26, Color(0.85, 0.85, 0.85))
-	_impressed_label = _a_lbl("Customers impressed: 0",0.12, 0.88, 0.46, 0.54, 24, Color(0.70, 1.0, 0.70))
-	_hit_label       = _a_lbl("Customers hit: 0",      0.12, 0.88, 0.55, 0.63, 24, Color(1.0, 0.70, 0.40))
-	_result_label    = _a_lbl("PASSED!",               0.12, 0.88, 0.68, 0.81, 42, Color(0.30, 1.0, 0.40))
-	_a_lbl("Press Space to continue",                  0.12, 0.88, 0.85, 0.92, 20, Color(0.75, 0.75, 0.75))
-
-func _a_rect(col: Color, al: float, ar: float, at: float, ab: float) -> void:
-	var r := ColorRect.new()
-	r.color         = col
-	r.anchor_left   = al;  r.anchor_right  = ar
-	r.anchor_top    = at;  r.anchor_bottom = ab
-	r.offset_left   = 0;   r.offset_right  = 0
-	r.offset_top    = 0;   r.offset_bottom = 0
-	_root.add_child(r)
-
-func _a_lbl(text: String, al: float, ar: float, at: float, ab: float,
-		fsize: int, col: Color) -> Label:
-	var lbl := Label.new()
-	lbl.text                 = text
-	lbl.anchor_left          = al
-	lbl.anchor_right         = ar
-	lbl.anchor_top           = at
-	lbl.anchor_bottom        = ab
-	lbl.offset_left          = 0;  lbl.offset_right  = 0
-	lbl.offset_top           = 0;  lbl.offset_bottom = 0
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
-	var s := LabelSettings.new()
-	s.font_size     = fsize
-	s.font_color    = col
-	s.outline_size  = 2
-	s.outline_color = Color(0, 0, 0, 0.9)
-	lbl.label_settings = s
-	_root.add_child(lbl)
-	return lbl
+	_title_label     = UIBuilder.anchor_label(_root, GameConstants.ROUND_COMPLETE % 1,
+		0.12, 0.88, 0.10, 0.21, 36, Color(1.0, 0.90, 0.30))
+	_score_label     = UIBuilder.anchor_label(_root, GameConstants.SCORE_LABEL % 0,
+		0.12, 0.88, 0.23, 0.33, 30, Color.WHITE)
+	_req_label       = UIBuilder.anchor_label(_root, GameConstants.REQUIRED_LABEL % 0,
+		0.12, 0.88, 0.34, 0.42, 26, Color(0.85, 0.85, 0.85))
+	_impressed_label = UIBuilder.anchor_label(_root, GameConstants.IMPRESSED_LABEL % 0,
+		0.12, 0.88, 0.46, 0.54, 24, Color(0.70, 1.0, 0.70))
+	_hit_label       = UIBuilder.anchor_label(_root, GameConstants.HIT_LABEL % 0,
+		0.12, 0.88, 0.55, 0.63, 24, Color(1.0, 0.70, 0.40))
+	_result_label    = UIBuilder.anchor_label(_root, GameConstants.RESULT_PASSED,
+		0.12, 0.88, 0.68, 0.81, 42, Color(0.30, 1.0, 0.40))
+	UIBuilder.anchor_label(_root, GameConstants.PRESS_SPACE_CONTINUE,
+		0.12, 0.88, 0.85, 0.92, 20, Color(0.75, 0.75, 0.75))
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -90,14 +67,14 @@ func show_result(score: int, required: int, impressed: int, hit: int,
 	_ready_for_input = false
 	visible = true
 
-	var title_base := "Round %d Complete!" if passed else "Round %d Failed"
-	_title_label.text     = title_base % round_num
-	_score_label.text     = "Score: %d" % score
-	_req_label.text       = "Required: %d" % required
-	_impressed_label.text = "Customers impressed: %d" % impressed
-	_hit_label.text       = "Customers hit by debris: %d" % hit
+	var title_fmt := GameConstants.ROUND_COMPLETE if passed else GameConstants.ROUND_FAILED
+	_title_label.text     = title_fmt % round_num
+	_score_label.text     = GameConstants.SCORE_LABEL % score
+	_req_label.text       = GameConstants.REQUIRED_LABEL % required
+	_impressed_label.text = GameConstants.IMPRESSED_LABEL % impressed
+	_hit_label.text       = GameConstants.HIT_LABEL % hit
 
-	_result_label.text = "PASSED!" if passed else "FAILED"
+	_result_label.text = GameConstants.RESULT_PASSED if passed else GameConstants.RESULT_FAILED
 	_result_label.label_settings.font_color = \
 		Color(0.30, 1.0, 0.40) if passed else Color(1.0, 0.30, 0.30)
 

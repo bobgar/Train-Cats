@@ -4,7 +4,8 @@
       "Bash(\"C:/tools/Godot_v4.6.1-stable_win64_console.exe\" --path \"c:/projects/WillowsGame\" --headless --quit)",
       "Bash(\"C:/tools/Godot_v4.6.1-stable_win64_console.exe\" --path \"c:/projects/WillowsGame\" --headless --export-release \"HTML5\" \"exports/index.html\")",
       "Bash(\"C:\\\\tools\\\\Godot_v4.6.1-stable_win64.exe\" --path \"c:\\\\projects\\\\WillowsGame\" --headless --quit)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(\"C:\\\\tools\\\\Godot_v4.6.1-stable_win64.exe\" --path \"c:\\\\projects\\\\WillowsGame\" --headless --script res://tests/test_runner.gd)"
     ]
   }
 }

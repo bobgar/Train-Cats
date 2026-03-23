@@ -132,7 +132,7 @@ func _build_hit_area() -> void:
 	area.monitoring  = true
 	area.monitorable = false
 	area.collision_layer = 0
-	area.collision_mask  = 8   # matches physics car layer 8
+	area.collision_mask  = GameConstants.LAYER_DEBRIS   # matches physics car layer 8
 	var cs    := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(8.0, 12.0, 8.0)
@@ -150,14 +150,14 @@ func _process(delta: float) -> void:
 	match _state:
 		State.RISING:
 			position.y = move_toward(position.y, SHOW_Y, RISE_SPEED * delta)
-			_track_player()
+			_update_head_tracking()
 			if absf(position.y - SHOW_Y) < 0.05:
 				position.y = SHOW_Y
 				_state = State.WATCHING
 				_watch_timer = WATCH_TIME
 		State.WATCHING:
 			_watch_timer -= delta
-			_track_player()
+			_update_head_tracking()
 			if _watch_timer <= 0.0:
 				_state = State.SINKING
 		State.SINKING:
@@ -167,16 +167,15 @@ func _process(delta: float) -> void:
 				done.emit()
 				queue_free()
 
-func _track_player() -> void:
+## Rotates the head to face the player's current world position (yaw only).
+## Only sets rotation.y so that ongoing X/Z wobble tweens are not overridden.
+func _update_head_tracking() -> void:
 	if _player_ref == null or not is_instance_valid(_player_ref):
 		return
 	var to := _player_ref.global_position - _head_pivot.global_position
 	to.y = 0.0
 	if to.length_squared() < 0.01:
 		return
-	# Only set yaw (rotation.y) so that X/Z tweens for wobble and recoil are
-	# never overridden.  Formula: local -Z after rotation.y=a is (-sin a, 0, -cos a).
-	# To make that equal the normalised to-vector: a = atan2(-to.x, -to.z).
 	_head_pivot.rotation.y = atan2(-to.x, -to.z)
 
 # ---------------------------------------------------------------------------
@@ -190,7 +189,7 @@ func _track_player() -> void:
 ## customer to event, dot it against the (fixed) inward face direction.
 ## A result > CONE_COS means the angle between them is < 60°, i.e. in-view.
 ## Using 2D Vector2 throughout to avoid any accidental 3D normalisation issues.
-func is_in_view_cone(world_pos: Vector3) -> bool:
+func can_see_position(world_pos: Vector3) -> bool:
 	# Guard: only score when customer is fully up and watching
 	if _state != State.WATCHING or _hit:
 		return false
@@ -216,13 +215,13 @@ func is_in_view_cone(world_pos: Vector3) -> bool:
 		return false
 
 	# Line-of-sight: 5 rays from face points to event, blocked by layer 1 (walls/table)
-	return _los_clear(world_pos)
+	return _has_line_of_sight(world_pos)
 
 ## Cast 5 rays from different points on the face toward the target.
 ## Returns true (line-of-sight clear) if ANY ray reaches the target unobstructed.
 ## Origins: centre of head + four face offsets (±right, ±up) ~2 units apart.
 ## This greatly reduces false negatives when a small obstruction clips just one ray.
-func _los_clear(to: Vector3) -> bool:
+func _has_line_of_sight(to: Vector3) -> bool:
 	if not is_inside_tree():
 		return true
 	var space_state := get_world_3d().direct_space_state

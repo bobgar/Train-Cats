@@ -16,6 +16,12 @@ run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+MeshBuilder="*res://autoloads/MeshBuilder.gd"
+UIBuilder="*res://autoloads/UIBuilder.gd"
+GameConstants="*res://autoloads/GameConstants.gd"
+
 [rendering]
 
 renderer/rendering_method="gl_compatibility"

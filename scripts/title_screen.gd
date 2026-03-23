@@ -8,9 +8,9 @@ class_name TitleScreen
 
 signal continue_pressed
 
-const LETTERS      := ["T","R","A","I","N"," ","C","A","T","S"]
-const LETTER_W     := 72.0   # pixels per letter slot
-const LETTER_BASE_Y := 10.0  # pixels from letters-container top (before bounce)
+const LETTERS       := ["T","R","A","I","N"," ","C","A","T","S"]
+const LETTER_W      := 72.0   # pixels per letter slot
+const LETTER_BASE_Y := 10.0   # pixels from letters-container top (before bounce)
 
 var _letter_labels: Array   = []
 var _game_over_label: Label = null
@@ -36,7 +36,7 @@ func _build_ui() -> void:
 	_root.add_child(bg)
 
 	# "GAME OVER" header — hidden until configure(true)
-	_game_over_label = _a_lbl("GAME OVER",
+	_game_over_label = UIBuilder.anchor_label(_root, GameConstants.GAME_OVER,
 		0.0, 1.0, 0.04, 0.14, 48, Color(1.0, 0.3, 0.3))
 	_game_over_label.visible = false
 
@@ -89,45 +89,17 @@ func _build_ui() -> void:
 	# -----------------------------------------------------------------------
 
 	# Credits
-	_a_lbl("by Kevin Kohler",
+	UIBuilder.anchor_label(_root, GameConstants.CREDITS_LABEL,
 		0.0, 1.0, 0.47, 0.54, 28, Color(0.85, 0.85, 0.85))
 
 	# Controls (auto-wrap, centred)
-	var ctrl_text := (
-		"Controls:\n" +
-		"  WASD / Arrow keys — Move     Shift — Run\n" +
-		"  Space — Jump     E or Click — Swipe     Mouse — Look around"
-	)
-	var ctrl_lbl := _a_lbl(ctrl_text,
+	var ctrl_lbl := UIBuilder.anchor_label(_root, GameConstants.CONTROLS_LABEL,
 		0.10, 0.90, 0.54, 0.76, 22, Color(0.90, 0.90, 0.90))
 	ctrl_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	# Press Space — well clear of controls text
-	_a_lbl("Press Space to play",
+	UIBuilder.anchor_label(_root, GameConstants.PRESS_SPACE_PLAY,
 		0.0, 1.0, 0.82, 0.91, 28, Color(1.0, 1.0, 0.45))
-
-func _a_lbl(text: String, al: float, ar: float, at: float, ab: float,
-		fsize: int, col: Color) -> Label:
-	var lbl := Label.new()
-	lbl.text                 = text
-	lbl.anchor_left          = al
-	lbl.anchor_right         = ar
-	lbl.anchor_top           = at
-	lbl.anchor_bottom        = ab
-	lbl.offset_left          = 0
-	lbl.offset_right         = 0
-	lbl.offset_top           = 0
-	lbl.offset_bottom        = 0
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.vertical_alignment   = VERTICAL_ALIGNMENT_CENTER
-	var s := LabelSettings.new()
-	s.font_size     = fsize
-	s.font_color    = col
-	s.outline_size  = 2
-	s.outline_color = Color(0, 0, 0, 0.9)
-	lbl.label_settings = s
-	_root.add_child(lbl)
-	return lbl
 
 # ---------------------------------------------------------------------------
 # Public API
