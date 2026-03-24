@@ -2,6 +2,18 @@ extends Node
 ## Shared factory methods for creating colored box meshes and solid physics boxes.
 ## Replaces the duplicate _mi / _mi_box / _sb / _sbox / _solid_box /
 ## _make_mesh_instance helpers that previously existed in six different scripts.
+##
+## Materials are cached by Color so identical colours share one StandardMaterial3D,
+## enabling Godot to batch draw calls for same-colour objects.
+
+static var _mat_cache: Dictionary = {}
+
+static func _get_mat(color: Color) -> StandardMaterial3D:
+	if not _mat_cache.has(color):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = color
+		_mat_cache[color] = m
+	return _mat_cache[color]
 
 ## Creates a MeshInstance3D with a BoxMesh of the given size and color,
 ## adds it to parent at pos, and returns it (caller may set rotation etc.).
@@ -10,9 +22,7 @@ static func colored_box(parent: Node3D, size: Vector3, color: Color, pos: Vector
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	mi.mesh   = mesh
-	var mat   := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
+	mi.material_override = _get_mat(color)
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
@@ -28,9 +38,7 @@ static func static_colored_box(parent: Node3D, size: Vector3, color: Color, pos:
 	var mesh  := BoxMesh.new()
 	mesh.size  = size
 	mi.mesh    = mesh
-	var mat    := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
+	mi.material_override = _get_mat(color)
 	sb.add_child(mi)
 	var cs    := CollisionShape3D.new()
 	var shape := BoxShape3D.new()

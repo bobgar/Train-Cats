@@ -14,13 +14,18 @@ const RESPAWN_DELAY := 5.0
 const _HIDE_Y := -8.0
 
 signal score_changed(new_score: int)
+signal base_score_changed(new_base: int)
+signal multiplier_changed(new_mult: int)
 
 var _player: Node3D = null
 var _table_hw: float = 34.0
 var _table_hd: float = 34.0
 var _customers: Array = []       # active CafeCustomer nodes
+var _idle_customers: Array = []  # pool of pre-created customers waiting to be reused
 var _spawn_timers: Array = []    # remaining wait times before next spawn
-var _score: int = 0
+var _score: int = 0        # total accumulated score (base × multiplier each event)
+var _base_score: int = 0   # same events counted at ×1 (pre-multiplier total)
+var _multiplier: int = 1   # starts at 1; +1 each time a customer is hit by debris
 var _rng := RandomNumberGenerator.new()
 
 # Round stats (reset each round)
@@ -36,6 +41,15 @@ func setup(player: Node3D, table_hw: float, table_hd: float) -> void:
 	_player   = player
 	_table_hw = table_hw
 	_table_hd = table_hd
+	# Pre-create the full pool — body is built once, reused for every spawn
+	for _i in range(MAX_ACTIVE):
+		var c := CafeCustomerScript.new()
+		add_child(c)
+		c.call("setup", _player, Vector3.FORWARD)   # face_dir overwritten by reuse()
+		c.visible = false    # hidden until reuse() makes them active
+		c.done.connect(_on_customer_done.bind(c))
+		_connect_hit_scored_signal(c)
+		_idle_customers.append(c)
 	# Stagger initial spawns slightly so they don't all pop up at once
 	for i in range(MAX_ACTIVE):
 		_spawn_timers.append(float(i) * 0.8)
@@ -45,12 +59,16 @@ func register_train(train: Node) -> void:
 
 func reset_round() -> void:
 	_score = 0
+	_base_score = 0
+	_multiplier = 1
 	impressed_count = 0
 	hit_count = 0
 	score_changed.emit(0)
+	base_score_changed.emit(0)
+	multiplier_changed.emit(1)
 
 func get_stats() -> Dictionary:
-	return {"score": _score, "impressed": impressed_count, "hit": hit_count}
+	return {"score": _score, "base_score": _base_score, "impressed": impressed_count, "hit": hit_count, "multiplier": _multiplier}
 
 # ---------------------------------------------------------------------------
 # Per-frame management
@@ -83,7 +101,7 @@ const SPAWN_MARGIN := 4.0   # stay back from table corners on each edge
 
 func _spawn_one() -> void:
 	var total := _customers.size() + _spawn_timers.size()
-	if total >= MAX_ACTIVE:
+	if total >= MAX_ACTIVE or _idle_customers.is_empty():
 		return
 
 	# Try up to 20 random positions; skip any that would overlap an existing customer.
@@ -124,22 +142,21 @@ func _spawn_one() -> void:
 		if too_close:
 			continue
 
-		# Valid position found — spawn here
-		var customer := CafeCustomerScript.new()
-		customer.position = pos
-		add_child(customer)
-		customer.call("setup", _player, face)
-		customer.done.connect(_on_customer_done.bind(customer))
+		# Valid position found — pull from pool and reuse
+		var customer: Node = _idle_customers.pop_back()
+		customer.call("reuse", pos, face)
 		_customers.append(customer)
-		_connect_hit_scored_signal(customer)
 		return
 	# All 20 attempts overlapped — silently skip; next respawn timer will retry
 
-## Connect to the customer's hit_scored signal so we award PTS_HIT_DEBRIS exactly once.
+## Connect to the customer's hit_scored signal.
+## Each hit raises the score multiplier by 1 (no direct score — higher multiplier means
+## subsequent visible derails are worth more points).
 func _connect_hit_scored_signal(customer: Node) -> void:
 	customer.connect("hit_scored", func() -> void:
 		hit_count += 1
-		_add_score(GameConstants.PTS_HIT_DEBRIS))
+		_multiplier += 1
+		multiplier_changed.emit(_multiplier))
 
 # ---------------------------------------------------------------------------
 # Event handlers
@@ -155,10 +172,13 @@ func _on_train_derailed(world_pos: Vector3, by_player: bool) -> void:
 		if c.call("can_see_position", world_pos):
 			c.call("trigger_happy")
 			impressed_count += 1
-			_add_score(GameConstants.PTS_CONE_DERAIL)
+			_base_score += GameConstants.PTS_CONE_DERAIL
+			base_score_changed.emit(_base_score)
+			_add_score(GameConstants.PTS_CONE_DERAIL * _multiplier)
 
 func _on_customer_done(customer: Node) -> void:
 	_customers.erase(customer)
+	_idle_customers.append(customer)
 	_spawn_timers.append(RESPAWN_DELAY)
 
 # ---------------------------------------------------------------------------

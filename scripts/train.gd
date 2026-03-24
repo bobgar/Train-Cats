@@ -49,6 +49,11 @@ var _cars: Array = []             # Array of Node3D
 var _car_areas: Array = []        # Array of Area3D (collision sensors)
 var _car_spacing: float = 2.55
 
+# Debris pool — pre-allocated RigidBody3D bodies reused across derailments
+var _debris_pool:   Array = []    # RigidBody3D, one per car
+var _debris_mats:   Array = []    # Array[StandardMaterial3D] per body (one per mesh, for fade)
+var _debris_tweens: Array = []    # active Tween per body (killed before reuse)
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -60,6 +65,7 @@ func setup(gen, stations: Array, start: Vector2i, color: Color, num_cars: int) -
 	_num_cars = num_cars
 	_patience_limit = randf_range(1.5, 2.8)   # stagger so trains don't all reverse at once
 	_build_visuals(num_cars, color)
+	_build_debris_pool(num_cars, color)
 	_depart_from(start)
 
 func is_derailed() -> bool:
@@ -78,6 +84,42 @@ func _build_visuals(num_cars: int, color: Color) -> void:
 		_attach_car_area(car, car_len)
 		add_child(car)
 		_cars.append(car)
+
+func _build_debris_pool(num_cars: int, color: Color) -> void:
+	var car_len := 2.3
+	for i in range(num_cars):
+		var rb := RigidBody3D.new()
+		rb.mass            = 1.5
+		rb.collision_layer = 0
+		rb.collision_mask  = 0
+		rb.visible         = false
+		# Build full train-car visuals in a container so debris looks like the real car
+		var container := Node3D.new()
+		_build_car(container, car_len, color, i == 0)
+		rb.add_child(container)
+		# Replace each shared cached material with a per-instance copy that supports alpha fade
+		var mats: Array = []
+		for child in container.get_children():
+			if child is MeshInstance3D:
+				var mi := child as MeshInstance3D
+				var orig := mi.material_override as StandardMaterial3D
+				if orig != null:
+					var fade_mat := StandardMaterial3D.new()
+					fade_mat.albedo_color = orig.albedo_color
+					fade_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+					mi.material_override  = fade_mat
+					mats.append(fade_mat)
+		# Collision bounding box
+		var cs    := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size  = Vector3(car_len - 0.1, 1.5, 1.6)
+		cs.shape    = shape
+		cs.position = Vector3(0, 0.75, 0)
+		rb.add_child(cs)
+		get_parent().add_child(rb)
+		_debris_pool.append(rb)
+		_debris_mats.append(mats)
+		_debris_tweens.append(null)
 
 func _build_car(car: Node3D, car_len: float, color: Color, is_loco: bool) -> void:
 	var body_color := color.darkened(0.18) if is_loco else color
@@ -124,9 +166,7 @@ func _mi_cyl(parent: Node3D, radius: float, height: float, color: Color, pos: Ve
 	mesh.bottom_radius = radius
 	mesh.height = height
 	mi.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mi.material_override = mat
+	mi.material_override = MeshBuilder._get_mat(color)
 	mi.position = pos
 	mi.rotation.x = PI * 0.5
 	parent.add_child(mi)
@@ -218,48 +258,39 @@ func _derail() -> void:
 		car.visible = false
 
 func _spawn_physics_car(car: Node3D, launch_vel: Vector3) -> void:
-	var rb := RigidBody3D.new()
+	var idx: int = _cars.find(car)
+	if idx < 0 or idx >= _debris_pool.size():
+		return
+	var rb: RigidBody3D = _debris_pool[idx]
+	# Kill any tween still running from a previous derailment on this body
+	var prev: Tween = _debris_tweens[idx]
+	if prev != null and prev.is_valid():
+		prev.kill()
+	# Reset alpha on all per-mesh fade materials
+	for m: StandardMaterial3D in _debris_mats[idx]:
+		m.albedo_color.a = 1.0
+	# Pull body from pool and launch
+	rb.collision_layer = GameConstants.LAYER_WORLD | GameConstants.LAYER_DEBRIS
+	rb.collision_mask  = GameConstants.LAYER_WORLD
 	rb.global_transform = car.global_transform
-	rb.mass = 1.5
-	rb.collision_layer = GameConstants.LAYER_WORLD | GameConstants.LAYER_DEBRIS   # world + debris
-	rb.collision_mask  = GameConstants.LAYER_WORLD   # collide with world floor/table
-	# Copy every MeshInstance3D from the original car so it keeps its look.
-	# Build a list of the new materials so we can fade them all together.
-	var fade_mats: Array = []
-	for child in car.get_children():
-		if child is MeshInstance3D:
-			var src := child as MeshInstance3D
-			var mi  := MeshInstance3D.new()
-			mi.mesh     = src.mesh
-			mi.position = src.position
-			mi.rotation = src.rotation
-			mi.scale    = src.scale
-			var orig := src.material_override as StandardMaterial3D
-			var new_mat := StandardMaterial3D.new()
-			if orig != null:
-				new_mat.albedo_color = orig.albedo_color
-			new_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			mi.material_override = new_mat
-			rb.add_child(mi)
-			fade_mats.append(new_mat)
-	# Bounding-box collider (approximate is fine for tumbling physics)
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(2.1, 1.3, 1.5)
-	cs.shape = shape
-	cs.position = Vector3(0, 0.65, 0)
-	rb.add_child(cs)
 	rb.linear_velocity  = launch_vel
 	rb.angular_velocity = Vector3(
 		randf_range(-5.0, 5.0), randf_range(-2.0, 2.0), randf_range(-5.0, 5.0))
-	get_parent().add_child(rb)
+	rb.visible = true
+	# Fade out then return body to pool (no queue_free — it's reused next derailment)
 	var tween := rb.create_tween()
+	_debris_tweens[idx] = tween
 	tween.tween_interval(3.5)
 	tween.tween_method(func(a: float) -> void:
-		for m in fade_mats:
-			(m as StandardMaterial3D).albedo_color.a = a
+		for m: StandardMaterial3D in _debris_mats[idx]:
+			m.albedo_color.a = a
 		, 1.0, 0.0, 1.5)
-	tween.tween_callback(func() -> void: rb.queue_free())
+	tween.tween_callback(func() -> void:
+		rb.visible         = false
+		rb.collision_layer = 0
+		rb.collision_mask  = 0
+		rb.linear_velocity  = Vector3.ZERO
+		rb.angular_velocity = Vector3.ZERO)
 
 # ---------------------------------------------------------------------------
 # Path sampling
@@ -481,7 +512,6 @@ func _respawn() -> void:
 	var parent := get_parent()
 
 	# Pick a station not currently occupied by another living train.
-	# Shuffle candidates so we don't always prefer the same station.
 	var candidates: Array = _station_nodes.duplicate()
 	candidates.shuffle()
 	var chosen: Vector2i = candidates[0]   # fallback if all are busy
@@ -491,17 +521,20 @@ func _respawn() -> void:
 			chosen = s
 			break
 
-	var new_train = get_script().new()
-	new_train.max_speed    = max_speed
-	new_train.acceleration = acceleration
-	new_train.deceleration = deceleration
-	parent.add_child(new_train)
-	new_train.call("setup", _gen, _station_nodes, chosen, _color, _num_cars)
-	# Re-register with CustomerManager so the new train's derailed signal is tracked
+	# Restore car visibility (they were hidden during derailment, not freed)
+	for car in _cars:
+		car.visible = true
+
+	# Reset and depart — reuses this Train node; no create/destroy
+	_respawn_timer  = 0.0
+	_current_speed  = 0.0
+	_patience_timer = 0.0
+	_depart_from(chosen)
+
+	# Re-register with CustomerManager so the derailed signal is tracked again
 	var mgr := parent.get_node_or_null("CustomerManager")
 	if mgr != null:
-		mgr.call("register_train", new_train)
-	queue_free()
+		mgr.call("register_train", self)
 
 ## Returns true if any living train has a car within 6 units of station_pos.
 func _is_station_occupied(station_pos: Vector3, parent: Node) -> bool:

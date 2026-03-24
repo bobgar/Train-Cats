@@ -8,17 +8,18 @@ class_name CafeCustomer
 signal done        ## emitted when fully hidden — manager frees the node
 signal hit_scored  ## emitted once the first time this customer is hit by debris
 
-enum State { RISING, WATCHING, SINKING }
+enum State { IDLE, RISING, WATCHING, SINKING }
 
 const HIDE_Y     := -8.0   # fully below table surface (2x head: top at y=6.1, so -8+6.1=-1.9)
-const SHOW_Y     :=  0.0   # fully risen — head clears table edge
+const SHOW_Y     :=  1.0   # fully risen — head clears table edge
+const SHOW_y_VARIANCE := .4
 const RISE_SPEED := 4.5    # units/sec — ~1.8s over 8-unit travel
 const SINK_SPEED := 3.5
 const WATCH_TIME := 20.0
 const CONE_COS      := 0.5    # cos(60°) — half-angle of view cone
-const VIEW_DISTANCE := 110.0  # max XZ distance to detect a derail (table diagonal ≈96)
+const VIEW_DISTANCE := 50.0   # max XZ distance to detect a derail (~half table width)
 
-var _state: State = State.RISING
+var _state: State = State.IDLE
 var _watch_timer: float = 0.0
 var _player_ref: Node3D = null
 var _face_dir: Vector3 = Vector3.FORWARD
@@ -28,6 +29,8 @@ var _eye_l: MeshInstance3D = null
 var _eye_r: MeshInstance3D = null
 var _hit: bool = false
 var _rng := RandomNumberGenerator.new()
+var _x_eye_bars: Array = []          # cached X-eye bar nodes (created on first hit, reused after)
+var _stars_node: CPUParticles3D = null   # cached star particles (restarted on reuse)
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -40,6 +43,25 @@ func setup(player: Node3D, face_dir: Vector3) -> void:
 	position.y = HIDE_Y
 	_build_body()
 	_build_hit_area()
+
+## Re-activates a pooled customer at a new position.  Never creates new nodes.
+func reuse(new_pos: Vector3, face_dir: Vector3) -> void:
+	visible = true
+	_face_dir = face_dir.normalized()
+	position = new_pos
+	_body_container.position = Vector3.ZERO
+	_head_pivot.rotation = Vector3.ZERO
+	# Restore normal eyes; hide X bars
+	if _eye_l != null and is_instance_valid(_eye_l): _eye_l.visible = true
+	if _eye_r != null and is_instance_valid(_eye_r): _eye_r.visible = true
+	for bar in _x_eye_bars:
+		if is_instance_valid(bar):
+			bar.visible = false
+	# Stop any leftover star burst
+	if _stars_node != null and is_instance_valid(_stars_node):
+		_stars_node.emitting = false
+	_hit = false
+	_state = State.RISING
 
 # ---------------------------------------------------------------------------
 # Body construction
@@ -148,6 +170,8 @@ func _build_hit_area() -> void:
 
 func _process(delta: float) -> void:
 	match _state:
+		State.IDLE:
+			pass
 		State.RISING:
 			position.y = move_toward(position.y, SHOW_Y, RISE_SPEED * delta)
 			_update_head_tracking()
@@ -164,8 +188,9 @@ func _process(delta: float) -> void:
 			position.y = move_toward(position.y, HIDE_Y, SINK_SPEED * delta)
 			if absf(position.y - HIDE_Y) < 0.05:
 				position.y = HIDE_Y
+				visible = false
+				_state = State.IDLE
 				done.emit()
-				queue_free()
 
 ## Rotates the head to face the player's current world position (yaw only).
 ## Only sets rotation.y so that ongoing X/Z wobble tweens are not overridden.
@@ -293,13 +318,22 @@ func trigger_hit() -> void:
 # ---------------------------------------------------------------------------
 
 func _set_x_eyes() -> void:
+	# Hide normal eyes
 	for eye in [_eye_l, _eye_r]:
 		if eye == null or not is_instance_valid(eye):
 			continue
-		# Hide the normal eye mesh
 		eye.visible = false
-		# Two thin boxes rotated ±45° form an X in the YZ plane
-		var x_color := Color(0.90, 0.10, 0.10)
+	# Reuse previously created bars if available
+	if not _x_eye_bars.is_empty():
+		for bar in _x_eye_bars:
+			if is_instance_valid(bar):
+				bar.visible = true
+		return
+	# First hit — create bars and cache them
+	var x_color := Color(0.90, 0.10, 0.10)
+	for eye in [_eye_l, _eye_r]:
+		if eye == null or not is_instance_valid(eye):
+			continue
 		for angle in [45.0, -45.0]:
 			var bar     := MeshInstance3D.new()
 			var bar_box := BoxMesh.new()
@@ -311,8 +345,14 @@ func _set_x_eyes() -> void:
 			bar.position = eye.position
 			bar.rotation_degrees.z = angle
 			_head_pivot.add_child(bar)
+			_x_eye_bars.append(bar)
 
 func _spawn_stars() -> void:
+	# Reuse existing particle node on subsequent hits
+	if _stars_node != null and is_instance_valid(_stars_node):
+		_stars_node.restart()
+		return
+
 	var stars                  := CPUParticles3D.new()
 	stars.emitting             = true
 	stars.amount               = 24
@@ -346,6 +386,7 @@ func _spawn_stars() -> void:
 	stars.mesh     = star_mesh
 	stars.position = Vector3(0.0, 9.0, 0.0)   # above 2× head
 	_head_pivot.add_child(stars)
+	_stars_node    = stars
 
 # ---------------------------------------------------------------------------
 # Debris collision

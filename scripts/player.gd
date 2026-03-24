@@ -14,7 +14,7 @@ const MOUSE_SENS       := 0.26
 const CAM_DIST         := 11.0
 const CTRL_DEADZONE    := 0.15
 const CTRL_SENS        := 120.0   # right-stick degrees per second
-const CAM_FOLLOW_SPEED := 4.0     # how fast camera swings behind player
+const CAM_FOLLOW_SPEED := 2.0     # how fast camera swings behind player
 
 # Camera orbit angles (degrees)
 var _cam_yaw:   float = 0.0    # 0 = camera sits in world +Z from player
@@ -31,7 +31,10 @@ var _leg_phase: float = 0.0
 var _body_area: Area3D         # overlaps train sensors for hit detection
 
 var _spawn_pos: Vector3        # set on _ready; used to respawn after falling
-var _respawning: bool = false  # true while waiting for respawn timer
+var _respawning: bool = false  # true while waiting for respawn countdown
+
+var _respawn_overlay: CanvasLayer = null
+var _respawn_label:   Label       = null
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -39,11 +42,11 @@ var _respawning: bool = false  # true while waiting for respawn timer
 
 func _ready() -> void:
 	_spawn_pos = position
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_build_collision()
 	_build_body_area()
 	_build_cat()
 	_build_camera()
+	_build_respawn_overlay()
 
 func _build_collision() -> void:
 	collision_layer = GameConstants.LAYER_WORLD
@@ -125,6 +128,28 @@ func _build_camera() -> void:
 	_camera.near = 0.15
 	add_child(_camera)
 
+func _build_respawn_overlay() -> void:
+	_respawn_overlay        = CanvasLayer.new()
+	_respawn_overlay.layer  = 25
+	_respawn_overlay.visible = false
+	add_child(_respawn_overlay)
+
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_respawn_overlay.add_child(root)
+
+	# Dark strip behind the text
+	var bg := ColorRect.new()
+	bg.color          = Color(0.0, 0.0, 0.0, 0.60)
+	bg.anchor_left    = 0.0;  bg.anchor_right  = 1.0
+	bg.anchor_top     = 0.36; bg.anchor_bottom = 0.64
+	bg.offset_left    = 0;    bg.offset_right  = 0
+	bg.offset_top     = 0;    bg.offset_bottom = 0
+	root.add_child(bg)
+
+	_respawn_label = UIBuilder.anchor_label(root, "Respawning in 3...",
+		0.0, 1.0, 0.40, 0.60, 42, Color.WHITE)
+
 # ---------------------------------------------------------------------------
 # Input
 # ---------------------------------------------------------------------------
@@ -148,18 +173,23 @@ func _input(event: InputEvent) -> void:
 		elif not _is_swiping:
 			_do_swipe()
 
+	if event is InputEventJoypadButton and event.pressed:
+		if event.button_index == JOY_BUTTON_X or event.button_index == JOY_BUTTON_RIGHT_SHOULDER:
+			if not _is_swiping:
+				_do_swipe()
+
 # ---------------------------------------------------------------------------
 # Physics — movement
 # ---------------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
-	# Respawn after falling off the table
+	# Trigger respawn countdown when falling off the table
 	if global_position.y < -8.0 and not _respawning:
-		_respawning = true
-		velocity = Vector3.ZERO
-		await get_tree().create_timer(2.0).timeout
-		global_position = _spawn_pos
-		_respawning = false
+		_start_respawn()
+
+	# Freeze all movement during the respawn countdown
+	if _respawning:
+		return
 
 	# Gravity
 	if not is_on_floor():
@@ -167,16 +197,24 @@ func _physics_process(delta: float) -> void:
 	elif velocity.y < 0:
 		velocity.y = 0.0
 
-	# Jump
-	if Input.is_key_pressed(KEY_SPACE) and is_on_floor():
+	# Jump — Space or controller A button
+	if (Input.is_key_pressed(KEY_SPACE) or Input.is_joy_button_pressed(0, JOY_BUTTON_A)) and is_on_floor():
 		velocity.y = JUMP_SPEED
 
-	# Read WASD input
-	var ix := float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) \
+	# Read movement input — keyboard and/or controller left stick
+	var kx := float(Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT)) \
 			- float(Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT))
-	var iy := float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) \
+	var ky := float(Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)) \
 			- float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP))
-	var sprint := Input.is_key_pressed(KEY_SHIFT)
+	var jx := Input.get_joy_axis(0, JOY_AXIS_LEFT_X)
+	var jy := Input.get_joy_axis(0, JOY_AXIS_LEFT_Y)
+	if absf(jx) < CTRL_DEADZONE: jx = 0.0
+	if absf(jy) < CTRL_DEADZONE: jy = 0.0
+	var ix := clampf(kx + jx, -1.0, 1.0)
+	var iy := clampf(ky + jy, -1.0, 1.0)
+	var sprint := Input.is_key_pressed(KEY_SHIFT) \
+			or Input.is_joy_button_pressed(0, JOY_BUTTON_LEFT_SHOULDER) \
+			or Input.get_joy_axis(0, JOY_AXIS_TRIGGER_LEFT) > 0.5
 	var spd    := SPRINT_SPEED if sprint else WALK_SPEED
 	var moving := ix != 0.0 or iy != 0.0
 
@@ -212,7 +250,29 @@ func _physics_process(delta: float) -> void:
 # Camera — orbital, updated in _process so it's smooth even at high physics rate
 # ---------------------------------------------------------------------------
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# Camera stays frozen while respawning
+	if _respawning:
+		return
+
+	# Right stick — manual camera control
+	var rx := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
+	var ry := Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
+	var stick_active := absf(rx) > CTRL_DEADZONE or absf(ry) > CTRL_DEADZONE
+	if absf(rx) > CTRL_DEADZONE:
+		_cam_yaw   -= rx * CTRL_SENS * delta
+	if absf(ry) > CTRL_DEADZONE:
+		_cam_pitch  = clamp(_cam_pitch + ry * CTRL_SENS * delta, 5.0, 62.0)
+
+	# Auto-follow: smoothly swing camera behind cat while moving,
+	# unless the right stick or mouse look is overriding it
+	var mouse_active := Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED
+	if not stick_active and not mouse_active:
+		var h_spd := Vector2(velocity.x, velocity.z).length()
+		if h_spd > 1.0:
+			_cam_yaw = rad_to_deg(lerp_angle(
+				deg_to_rad(_cam_yaw), _body_pivot.rotation.y, delta * CAM_FOLLOW_SPEED))
+
 	var yaw_r   := deg_to_rad(_cam_yaw)
 	var pitch_r := deg_to_rad(_cam_pitch)
 	var cp := cos(pitch_r)
@@ -223,8 +283,23 @@ func _process(_delta: float) -> void:
 	var cam_pos    := look_at + offset
 	cam_pos.y       = maxf(cam_pos.y, 1.5)   # never clip below the table surface
 	_camera.global_position = cam_pos
-	# look_at is safe as long as camera is never directly above (pitch < 90°, clamped to 62°)
 	_camera.look_at(look_at, Vector3.UP)
+
+# ---------------------------------------------------------------------------
+# Respawn
+# ---------------------------------------------------------------------------
+
+func _start_respawn() -> void:
+	_respawning = true
+	velocity    = Vector3.ZERO
+	_respawn_overlay.visible = true
+	for count: int in [3, 2, 1]:
+		_respawn_label.text = "Respawning in %d..." % count
+		await get_tree().create_timer(1.0).timeout
+	_respawn_overlay.visible = false
+	global_position = _spawn_pos
+	velocity        = Vector3.ZERO
+	_respawning     = false
 
 # ---------------------------------------------------------------------------
 # Leg animation

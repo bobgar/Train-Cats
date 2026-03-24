@@ -48,8 +48,8 @@ func _build_ui() -> void:
 	var letters_container := Control.new()
 	letters_container.anchor_left   = 0.0
 	letters_container.anchor_right  = 1.0
-	letters_container.anchor_top    = 0.22
-	letters_container.anchor_bottom = 0.46
+	letters_container.anchor_top    = 0.12
+	letters_container.anchor_bottom = 0.35
 	letters_container.offset_left   = 0
 	letters_container.offset_right  = 0
 	letters_container.offset_top    = 0
@@ -90,11 +90,11 @@ func _build_ui() -> void:
 
 	# Credits
 	UIBuilder.anchor_label(_root, GameConstants.CREDITS_LABEL,
-		0.0, 1.0, 0.47, 0.54, 28, Color(0.85, 0.85, 0.85))
+		0.0, 1.0, 0.36, 0.43, 28, Color(0.85, 0.85, 0.85))
 
 	# Controls (auto-wrap, centred)
 	var ctrl_lbl := UIBuilder.anchor_label(_root, GameConstants.CONTROLS_LABEL,
-		0.10, 0.90, 0.54, 0.76, 22, Color(0.90, 0.90, 0.90))
+		0.10, 0.90, 0.43, 0.78, 22, Color(0.90, 0.90, 0.90))
 	ctrl_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	# Press Space — well clear of controls text

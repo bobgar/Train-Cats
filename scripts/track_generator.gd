@@ -23,8 +23,14 @@ var _edge_curves: Dictionary = {}   # canonical key -> Array[Vector3] sampled cu
 var _junction_arcs: Dictionary = {} # center|nb_a|nb_b key -> Array[Vector3] arc points
 var _station_set: Dictionary = {}   # Vector2i gpos -> true; these nodes skip pullback
 const _CORNER_RADIUS: float = 2.6
-var _rail_mat: StandardMaterial3D
-var _tie_mat: StandardMaterial3D
+var _rail_mat:    StandardMaterial3D
+var _tie_mat:     StandardMaterial3D
+var _ballast_mat: StandardMaterial3D
+
+# Transform accumulators — filled during _render_all(), consumed by _build_multimeshes()
+var _rail_xforms:    Array = []
+var _tie_xforms:     Array = []
+var _ballast_xforms: Array = []
 
 func _ready() -> void:
 	_build_materials()
@@ -47,6 +53,8 @@ func _build_materials() -> void:
 	_rail_mat.albedo_color = Color(0.52, 0.52, 0.56)
 	_tie_mat = StandardMaterial3D.new()
 	_tie_mat.albedo_color = Color(0.28, 0.18, 0.10)
+	_ballast_mat = StandardMaterial3D.new()
+	_ballast_mat.albedo_color = Color(0.55, 0.50, 0.44)
 
 func _build_nodes() -> void:
 	var half_w: float = grid_width * cell_size * 0.5
@@ -334,7 +342,7 @@ func is_station(gpos: Vector2i) -> bool:
 func _render_all() -> void:
 	for edge in _edges:
 		_spawn_curved_segment(get_edge_curve(edge[0], edge[1]))
-	# Render junction arcs to fill gaps at interior nodes
+	# Collect junction arc transforms to fill gaps at interior nodes
 	for gpos_var in adjacency.keys():
 		var center: Vector2i = gpos_var
 		if not _is_pullback_node(center):
@@ -347,8 +355,12 @@ func _render_all() -> void:
 				var arc: Array = get_junction_arc(center, nb_a, nb_b)
 				if not arc.is_empty():
 					_spawn_curved_segment(arc)
+	# All transforms collected — build the three MultiMeshInstance3D nodes
+	_build_multimeshes()
 
-## Renders ballast, rails, and ties along a dense array of curve points.
+## Accumulates rail, tie, and ballast transforms for a dense array of curve points.
+## No nodes are created here; _build_multimeshes() creates the actual geometry after
+## all curves and junction arcs have been processed.
 func _spawn_curved_segment(points: Array) -> void:
 	var n: int = points.size()
 	if n < 2:
@@ -361,28 +373,39 @@ func _spawn_curved_segment(points: Array) -> void:
 			continue
 		var center: Vector3 = (seg_from + seg_to) * 0.5
 		var dir: Vector3    = (seg_to - seg_from).normalized()
-		var yaw: float      = atan2(-dir.z, dir.x)
+		# perp = dir × UP: perpendicular to the track direction in the XZ plane.
 		var perp: Vector3   = Vector3(-dir.z, 0.0, dir.x)
-		# Ballast strip
-		var ballast := MeshBuilder.colored_box(self,
-			Vector3(seg_len + 0.02, 0.06, 1.6), Color(0.55, 0.50, 0.44),
-			center + Vector3.UP * 0.02)
-		ballast.rotation.y = yaw
-		# Two rails
+		# Build each basis by writing scaled direction vectors into the COLUMN
+		# properties (.x, .y, .z).  Godot 4's Basis(a,b,c) constructor assigns rows,
+		# not columns, so it cannot be used here.  Setting .x/.y/.z calls the column
+		# setters and correctly encodes "local-X maps to dir*len in world space" for
+		# any segment angle without shearing.
+		var rail_len: float = seg_len + 0.02
+
+		# Ballast strip: rail_len along track, 0.06 tall, 1.6 wide across track
+		var bb := Basis()
+		bb.x = dir * rail_len
+		bb.y = Vector3(0.0, 0.06, 0.0)
+		bb.z = perp * 1.6
+		_ballast_xforms.append(Transform3D(bb, center + Vector3.UP * 0.02))
+
+		# Two rails: rail_len along track, 0.13 tall, 0.10 wide
+		var rb := Basis()
+		rb.x = dir * rail_len
+		rb.y = Vector3(0.0, 0.13, 0.0)
+		rb.z = perp * 0.10
 		for side in [-0.58, 0.58]:
-			var rail := _make_static_box(
-				Vector3(seg_len + 0.02, 0.13, 0.10), _rail_mat)
-			rail.position   = center + perp * side + Vector3.UP * 0.13
-			rail.rotation.y = yaw
-			add_child(rail)
-		# Ties
+			_rail_xforms.append(Transform3D(rb, center + perp * side + Vector3.UP * 0.13))
+
+		# Ties: 0.20 along track, 0.08 tall, 1.30 wide across track
+		var tb := Basis()
+		tb.x = dir * 0.20
+		tb.y = Vector3(0.0, 0.08, 0.0)
+		tb.z = perp * 1.30
 		var num_ties: int = maxi(1, int(seg_len / 0.85))
 		for j in range(num_ties):
 			var t: float = (float(j) + 0.5) / float(num_ties)
-			var tie := _make_static_box(Vector3(0.20, 0.08, 1.30), _tie_mat)
-			tie.position   = seg_from.lerp(seg_to, t) + Vector3.UP * 0.05
-			tie.rotation.y = yaw
-			add_child(tie)
+			_tie_xforms.append(Transform3D(tb, seg_from.lerp(seg_to, t) + Vector3.UP * 0.05))
 
 ## Returns up to max_count boundary grid nodes that have track connections,
 ## shuffled so station placement is random each run.
@@ -407,19 +430,27 @@ func get_outward_dir(gpos: Vector2i) -> Vector3:
 		return Vector3(0, 0, -1)
 	return Vector3(0, 0, 1)
 
-func _make_static_box(size: Vector3, mat: StandardMaterial3D) -> StaticBody3D:
-	var body := StaticBody3D.new()
-	body.collision_layer = GameConstants.LAYER_TRACK   # separate layer so the player (mask=1) walks over rails
-	body.collision_mask  = 0
-	var mi := MeshInstance3D.new()
+func _build_multimeshes() -> void:
+	_make_multimesh("Ballast", _ballast_xforms, _ballast_mat)
+	_make_multimesh("Rails",   _rail_xforms,    _rail_mat)
+	_make_multimesh("Ties",    _tie_xforms,     _tie_mat)
+	_rail_xforms.clear()
+	_tie_xforms.clear()
+	_ballast_xforms.clear()
+
+func _make_multimesh(label: String, xforms: Array, mat: StandardMaterial3D) -> void:
+	if xforms.is_empty():
+		return
 	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	mi.material_override = mat
-	body.add_child(mi)
-	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = size
-	cs.shape = shape
-	body.add_child(cs)
-	return body
+	mesh.size = Vector3.ONE   # unit box; actual dimensions are encoded in per-instance transform scale
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh             = mesh
+	mm.instance_count   = xforms.size()
+	for i in range(xforms.size()):
+		mm.set_instance_transform(i, xforms[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name              = label
+	mmi.multimesh         = mm
+	mmi.material_override = mat
+	add_child(mmi)

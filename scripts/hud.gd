@@ -9,7 +9,9 @@ signal time_up
 const ROUND_DURATION := 60.0
 
 var _timer_label:  Label = null
-var _score_label:  Label = null
+var _base_label:   Label = null
+var _mult_label:   Label = null
+var _total_label:  Label = null
 var _round_label:  Label = null
 var _needed_label: Label = null
 var _root:         Control = null
@@ -28,9 +30,17 @@ func _build_ui() -> void:
 	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_root)
 
-	# Score — top-left
-	_score_label  = UIBuilder.anchor_label(_root, GameConstants.SCORE_LABEL % 0,
-		0.01, 0.35, 0.01, 0.09, 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	# Base score — top-left
+	_base_label   = UIBuilder.anchor_label(_root, GameConstants.BASE_LABEL % 0,
+		0.01, 0.35, 0.01, 0.07, 18, Color(0.80, 0.80, 0.80), HORIZONTAL_ALIGNMENT_LEFT)
+
+	# Multiplier — below base
+	_mult_label   = UIBuilder.anchor_label(_root, GameConstants.MULTIPLIER_LABEL % 1,
+		0.01, 0.35, 0.07, 0.13, 20, Color(1.0, 0.85, 0.30), HORIZONTAL_ALIGNMENT_LEFT)
+
+	# Total score — below multiplier (most prominent)
+	_total_label  = UIBuilder.anchor_label(_root, GameConstants.TOTAL_LABEL % 0,
+		0.01, 0.35, 0.13, 0.21, 26, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 
 	# Timer — top-centre (larger font)
 	_timer_label  = UIBuilder.anchor_label(_root, "1:00",
@@ -54,15 +64,23 @@ func start_round(round_num: int, required: int) -> void:
 	visible                = true
 	_round_label.text      = GameConstants.ROUND_LABEL % round_num
 	_needed_label.text     = GameConstants.NEED_LABEL % required
-	_score_label.text      = GameConstants.SCORE_LABEL % 0
+	_base_label.text       = GameConstants.BASE_LABEL % 0
+	_mult_label.text       = GameConstants.MULTIPLIER_LABEL % 1
+	_total_label.text      = GameConstants.TOTAL_LABEL % 0
 	_update_timer_label()
 
 func stop() -> void:
 	_active  = false
 	visible  = false
 
+func update_base(new_base: int) -> void:
+	_base_label.text = GameConstants.BASE_LABEL % new_base
+
+func update_multiplier(new_mult: int) -> void:
+	_mult_label.text = GameConstants.MULTIPLIER_LABEL % new_mult
+
 func update_score(new_score: int) -> void:
-	_score_label.text = GameConstants.SCORE_LABEL % new_score
+	_total_label.text = GameConstants.TOTAL_LABEL % new_score
 
 # ---------------------------------------------------------------------------
 # Per-frame

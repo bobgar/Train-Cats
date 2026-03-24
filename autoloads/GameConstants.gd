@@ -31,6 +31,9 @@ const PTS_HIT_DEBRIS  := 25   # awarded when a customer is hit by flying debris
 # Replace with tr() calls once a proper locale/translation import is set up.
 # ---------------------------------------------------------------------------
 const SCORE_LABEL         := "Score: %d"
+const BASE_LABEL          := "Base: %d"
+const TOTAL_LABEL         := "Total: %d"
+const MULTIPLIER_LABEL    := "Multiplier: ×%d"
 const ROUND_LABEL         := "Round %d"
 const NEED_LABEL          := "Need: %d pts"
 const ROUND_COMPLETE      := "Round %d Complete!"
@@ -43,7 +46,7 @@ const RESULT_FAILED       := "FAILED"
 const PRESS_SPACE_CONTINUE := "Press Space to continue"
 const GAME_OVER           := "GAME OVER"
 const CREDITS_LABEL       := "by Kevin Kohler"
-const CONTROLS_LABEL      := "Controls:\n  WASD / Arrow keys — Move     Shift — Run\n  Space — Jump     E or Click — Swipe     Mouse — Look around"
+const CONTROLS_LABEL      := "Controls:\n  WASD / Arrow keys — Move     Shift — Run     Space — Jump\n  E or Click — Swipe trains     Mouse — Look around\n\nScoring:\n  Derail a train in front of customers → 10 pts × multiplier per customer watching\n  Hit customers with train debris → +1 to your multiplier (starts at ×1)"
 const PRESS_SPACE_PLAY    := "Press Space to play"
 const PAUSED              := "PAUSED"
 const PAUSE_RETURN_TITLE  := "Return to title screen?"

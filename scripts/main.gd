@@ -82,6 +82,8 @@ func _ready() -> void:
 	_hud             = HUDScript.new()
 	_hud.name        = "HUD"
 	add_child(_hud)
+	_customer_manager.base_score_changed.connect(_hud.update_base)
+	_customer_manager.multiplier_changed.connect(_hud.update_multiplier)
 	_customer_manager.score_changed.connect(_hud.update_score)
 
 	_title_screen      = TitleScreenScript.new()
@@ -144,8 +146,9 @@ func _end_round() -> void:
 	# Cinematic zoom — tween camera toward cat's face then show scoreboard
 	_play_round_end_cinematic(func() -> void:
 		_round_scoreboard.show_result(
-			score, req,
+			score, stats.get("base_score", 0), req,
 			stats.get("impressed", 0), stats.get("hit", 0),
+			stats.get("multiplier", 1),
 			passed, _current_round))
 
 func _on_scoreboard_continue() -> void:
@@ -612,7 +615,6 @@ func _show_pause_menu() -> void:
 func _resume_game() -> void:
 	_pause_overlay.visible = false
 	get_tree().paused      = false
-	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
 func _quit_to_title() -> void:
 	_pause_overlay.visible = false
@@ -631,6 +633,15 @@ func _quit_to_title() -> void:
 # ---------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Controller Start button — toggle pause
+	if event is InputEventJoypadButton and event.pressed:
+		if (event as InputEventJoypadButton).button_index == JOY_BUTTON_START:
+			if _pause_overlay != null and _pause_overlay.visible:
+				_resume_game()
+			elif _game_state == GameState.PLAYING:
+				_show_pause_menu()
+			return
+
 	if not event is InputEventKey:
 		return
 	var ke := event as InputEventKey
