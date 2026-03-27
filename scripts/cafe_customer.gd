@@ -11,8 +11,8 @@ signal hit_scored  ## emitted once the first time this customer is hit by debris
 enum State { IDLE, RISING, WATCHING, SINKING }
 
 const HIDE_Y     := -8.0   # fully below table surface (2x head: top at y=6.1, so -8+6.1=-1.9)
-const SHOW_Y     :=  1.0   # fully risen — head clears table edge
-const SHOW_y_VARIANCE := .4
+const SHOW_Y     :=  0.6   # fully risen — head clears table edge
+const SHOW_y_VARIANCE := 1.8
 const RISE_SPEED := 4.5    # units/sec — ~1.8s over 8-unit travel
 const SINK_SPEED := 3.5
 const WATCH_TIME := 20.0
@@ -31,6 +31,7 @@ var _hit: bool = false
 var _rng := RandomNumberGenerator.new()
 var _x_eye_bars: Array = []          # cached X-eye bar nodes (created on first hit, reused after)
 var _stars_node: CPUParticles3D = null   # cached star particles (restarted on reuse)
+var _show_y: float = 0.0
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -43,6 +44,7 @@ func setup(player: Node3D, face_dir: Vector3) -> void:
 	position.y = HIDE_Y
 	_build_body()
 	_build_hit_area()
+	_show_y = SHOW_Y + randf_range(0, SHOW_y_VARIANCE)
 
 ## Re-activates a pooled customer at a new position.  Never creates new nodes.
 func reuse(new_pos: Vector3, face_dir: Vector3) -> void:
@@ -173,10 +175,10 @@ func _process(delta: float) -> void:
 		State.IDLE:
 			pass
 		State.RISING:
-			position.y = move_toward(position.y, SHOW_Y, RISE_SPEED * delta)
+			position.y = move_toward(position.y, _show_y, RISE_SPEED * delta)
 			_update_head_tracking()
-			if absf(position.y - SHOW_Y) < 0.05:
-				position.y = SHOW_Y
+			if absf(position.y - _show_y) < 0.05:
+				position.y = _show_y
 				_state = State.WATCHING
 				_watch_timer = WATCH_TIME
 		State.WATCHING:
